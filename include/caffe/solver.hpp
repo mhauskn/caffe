@@ -125,6 +125,21 @@ class AdaGradSolver : public SGDSolver<Dtype> {
 };
 
 template <typename Dtype>
+class AtariSolver : public SGDSolver<Dtype> {
+ public:
+  explicit AtariSolver(const SolverParameter& param)
+      : SGDSolver<Dtype>(param) {}
+  explicit AtariSolver(const string& param_file)
+      : SGDSolver<Dtype>(param_file) {}
+
+  virtual void Solve(const char* resume_file = NULL);
+
+ protected:
+    // Runs the Atari to generate data for training
+    virtual void PlayAtari();
+};
+
+template <typename Dtype>
 Solver<Dtype>* GetSolver(const SolverParameter& param) {
   SolverParameter_SolverType type = param.solver_type();
 
@@ -135,6 +150,8 @@ Solver<Dtype>* GetSolver(const SolverParameter& param) {
       return new NesterovSolver<Dtype>(param);
   case SolverParameter_SolverType_ADAGRAD:
       return new AdaGradSolver<Dtype>(param);
+  case SolverParameter_SolverType_ATARI:
+      return new AtariSolver<Dtype>(param);
   default:
       LOG(FATAL) << "Unknown SolverType: " << type;
   }

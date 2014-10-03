@@ -753,6 +753,96 @@ void AdaGradSolver<Dtype>::ComputeUpdateValue() {
   }
 }
 
+template <typename Dtype>
+void AtariSolver<Dtype>::Solve(const char* resume_file) {
+  Caffe::set_phase(Caffe::TRAIN);
+  LOG(INFO) << "Solving " << this->net_->name();
+  this->PreSolve();
+
+  this->iter_ = 0;
+  if (resume_file) {
+    LOG(INFO) << "Restoring previous solver status from " << resume_file;
+    this->Restore(resume_file);
+  }
+  // Remember the initial iter_ value; will be non-zero if we loaded from a
+  // resume_file above.
+  const int start_iter = this->iter_;
+
+  // For a network that is trained by the solver, no bottom or top vecs
+  // should be given, and we will just provide dummy vecs.
+  vector<Blob<Dtype>*> bottom_vec;
+  for (; this->iter_ < this->param_.max_iter(); ++this->iter_) {
+    // Save a snapshot if needed.
+    if (this->param_.snapshot() && this->iter_ > start_iter &&
+        this->iter_ % this->param_.snapshot() == 0) {
+      this->Snapshot();
+    }
+
+    if (this->param_.test_interval() &&
+        this->iter_ % this->param_.test_interval() == 0) {
+      this->PlayAtari();
+    }
+
+    const bool display = this->param_.display() &&
+        this->iter_ % this->param_.display() == 0;
+    this->net_->set_debug_info(display && this->param_.debug_info());
+    Dtype loss = this->net_->ForwardBackward(bottom_vec);
+    if (display) {
+      LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
+      const vector<Blob<Dtype>*>& result = this->net_->output_blobs();
+      int score_index = 0;
+      for (int j = 0; j < result.size(); ++j) {
+        const Dtype* result_vec = result[j]->cpu_data();
+        const string& output_name =
+            this->net_->blob_names()[this->net_->output_blob_indices()[j]];
+        const Dtype loss_weight = this->net_->blob_loss_weights()
+                                  [this->net_->output_blob_indices()[j]];
+        for (int k = 0; k < result[j]->count(); ++k) {
+          ostringstream loss_msg_stream;
+          if (loss_weight) {
+            loss_msg_stream << " (* " << loss_weight
+                            << " = " << loss_weight * result_vec[k] << " loss)";
+          }
+          LOG(INFO) << "    Train net output #"
+              << score_index++ << ": " << output_name << " = "
+              << result_vec[k] << loss_msg_stream.str();
+        }
+      }
+    }
+
+    this->ComputeUpdateValue();
+    this->net_->Update();
+  }
+  // Always save a snapshot after optimization, unless overridden by setting
+  // snapshot_after_train := false.
+  if (this->param_.snapshot_after_train()) { this->Snapshot(); }
+  // After the optimization is done, run an additional train and test pass to
+  // display the train and test loss/outputs if appropriate (based on the
+  // display and test_interval settings, respectively).  Unlike in the rest of
+  // training, for the train net we only run a forward pass as we've already
+  // updated the parameters "max_iter" times -- this final pass is only done to
+  // display the loss, which is computed in the forward pass.
+  if (this->param_.display() && this->iter_ % this->param_.display() == 0) {
+    Dtype loss;
+    this->net_->Forward(bottom_vec, &loss);
+    LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
+  }
+  if (this->param_.test_interval() &&
+      this->iter_ % this->param_.test_interval() == 0) {
+    this->PlayAtari();
+  }
+  LOG(INFO) << "Optimization Done.";
+}
+
+template <typename Dtype>
+void AtariSolver<Dtype>::PlayAtari() {
+  LOG(INFO) << "Entering Game Playing Phase.";
+
+  ;
+
+  LOG(INFO) << "Leaving Game Playing Phase.";
+}
+
 INSTANTIATE_CLASS(Solver);
 INSTANTIATE_CLASS(SGDSolver);
 INSTANTIATE_CLASS(NesterovSolver);
