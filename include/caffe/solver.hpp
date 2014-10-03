@@ -124,6 +124,10 @@ class AdaGradSolver : public SGDSolver<Dtype> {
   DISABLE_COPY_AND_ASSIGN(AdaGradSolver);
 };
 
+/**
+ * Atari Solver is intended to replicate results from
+ * "Playing Atari with Deep Reinforcement Learning"
+ */
 template <typename Dtype>
 class AtariSolver : public SGDSolver<Dtype> {
  public:
@@ -135,8 +139,10 @@ class AtariSolver : public SGDSolver<Dtype> {
   virtual void Solve(const char* resume_file = NULL);
 
  protected:
-    // Runs the Atari to generate data for training
-    virtual void PlayAtari();
+  // Runs the Atari to generate data for training
+  virtual void PlayAtari();
+
+  DISABLE_COPY_AND_ASSIGN(AtariSolver);
 };
 
 template <typename Dtype>
