@@ -759,6 +759,9 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
   LOG(INFO) << "Solving " << this->net_->name();
   this->PreSolve();
 
+  // Load the ROM file
+  ale_.loadROM("/home/matthew/projects/ale-assets/roms/asterix.bin");
+
   this->iter_ = 0;
   if (resume_file) {
     LOG(INFO) << "Restoring previous solver status from " << resume_file;
@@ -838,7 +841,21 @@ template <typename Dtype>
 void AtariSolver<Dtype>::PlayAtari() {
   LOG(INFO) << "Entering Game Playing Phase.";
 
-  ;
+  // Get the vector of legal actions
+  ActionVect legal_actions = ale_.getLegalActionSet();
+
+  // Play 10 episodes
+  for (int episode=0; episode < 10; episode++) {
+    float totalReward = 0;
+    while (!ale_.game_over()) {
+      Action a = legal_actions[rand() % legal_actions.size()];
+      // Apply the action and get the resulting reward
+      float reward = ale_.act(a);
+      totalReward += reward;
+    }
+    LOG(INFO) << "Episode " << episode << " ended with score: " << totalReward;
+    ale_.reset_game();
+  }
 
   LOG(INFO) << "Leaving Game Playing Phase.";
 }

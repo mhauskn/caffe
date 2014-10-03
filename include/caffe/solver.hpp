@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "caffe/net.hpp"
+#include <ale_interface.hpp>
 
 namespace caffe {
 
@@ -141,6 +142,8 @@ class AtariSolver : public SGDSolver<Dtype> {
  protected:
   // Runs the Atari to generate data for training
   virtual void PlayAtari();
+
+  ALEInterface ale_;
 
   DISABLE_COPY_AND_ASSIGN(AtariSolver);
 };
