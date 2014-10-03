@@ -1,0 +1,3 @@
+[submodule "Arcade-Learning-Environment"]
+	path = Arcade-Learning-Environment
+	url = git@github.com:mgbellemare/Arcade-Learning-Environment.git
