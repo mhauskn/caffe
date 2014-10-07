@@ -756,13 +756,17 @@ void AdaGradSolver<Dtype>::ComputeUpdateValue() {
 }
 
 template <typename Dtype>
+void AtariSolver<Dtype>::PreSolve() {
+  SGDSolver<Dtype>::PreSolve();
+  // Load the ROM file
+  ale_.loadROM("/home/matthew/projects/ale-assets/roms/asterix.bin");
+}
+
+template <typename Dtype>
 void AtariSolver<Dtype>::Solve(const char* resume_file) {
   Caffe::set_phase(Caffe::TRAIN);
   LOG(INFO) << "Solving " << this->net_->name();
   this->PreSolve();
-
-  // Load the ROM file
-  ale_.loadROM("/home/matthew/projects/ale-assets/roms/asterix.bin");
 
   this->iter_ = 0;
   if (resume_file) {
@@ -851,17 +855,29 @@ void AtariSolver<Dtype>::PlayAtari() {
       boost::static_pointer_cast<MemoryDataLayer<Dtype> >
       (this->test_nets_[0]->layer_by_name("atari-memory"));
 
+  // TODO(mhauskn): anneal epsilon
+  float epsilon = 0.5;
   for (int episode = 0; episode < 10; episode++) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       memory_layer->AddDatumVector(datum_vector);
-      int action = GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
-      // Action a = legal_actions[max_ind];
-      Action a = legal_actions[rand() % legal_actions.size()];
+      int action_indx = GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
+
+      // Epsilon-greedy action selection
+      // TODO(mhauskn): Speedup by only doing forward if needed
+      Action action;
+      float f;
+      caffe_rng_uniform(1, 0.f, 1.f, &f);
+      if (f < epsilon) {
+        action = legal_actions[caffe_rng_rand() % legal_actions.size()];
+      } else {
+        action = legal_actions[action_indx];
+      }
+
       // Apply the action and get the resulting reward
-      float reward = ale_.act(a);
+      float reward = ale_.act(action);
       totalReward += reward;
       steps++;
     }
@@ -896,15 +912,19 @@ int AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs) {
       << "Output layer has fewer nodes than number of legal actions.";
   const Dtype* output_data = output_blobs[0]->cpu_data();
   Dtype max_val = output_data[0];
-  int max_ind = 0;
+  vector<int> max_inds;
+  max_inds.push_back(0);
   for (int i = 1; i < num_legal_actions; ++i) {
-    // TODO(mhauskn): Handle case of equal values
     if (output_data[i] > max_val) {
+      max_inds.clear();
       max_val = output_data[i];
-      max_ind = i;
+      max_inds.push_back(i);
+    } else if (output_data[i] == max_val) {
+      LOG(INFO) << "Collision!";
+      max_inds.push_back(i);
     }
   }
-  return max_ind;
+  return max_inds[caffe_rng_rand() % max_inds.size()];
 }
 
 INSTANTIATE_CLASS(Solver);
