@@ -760,6 +760,16 @@ void AtariSolver<Dtype>::PreSolve() {
   SGDSolver<Dtype>::PreSolve();
   // Load the ROM file
   ale_.loadROM("/home/matthew/projects/ale-assets/roms/asterix.bin");
+
+  // Initialize and load leveldb
+  string db_path = "examples/atari/atari_train_leveldb";
+  leveldb::Options options;
+  options.create_if_missing = true;
+  options.error_if_exists = true;
+  DestroyDB(db_path, options);
+  leveldb::Status status;
+  status = leveldb::DB::Open(options, db_path, &db_);
+  CHECK(status.ok()) << "Failed to open leveldb.";
 }
 
 template <typename Dtype>
@@ -841,6 +851,7 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->PlayAtari();
   }
   LOG(INFO) << "Optimization Done.";
+  delete db_;
 }
 
 template <typename Dtype>
@@ -880,6 +891,25 @@ void AtariSolver<Dtype>::PlayAtari() {
       float reward = ale_.act(action);
       totalReward += reward;
       steps++;
+
+      // Append the next screen to the datum
+      Datum& datum = datum_vector[0];
+      string* data_str = datum.mutable_data();
+      const char* pixels = (const char*) screen.getArray();
+      data_str->append(pixels, screen.arraySize());
+
+      // Add the reward as an integer label
+      // TODO(mhauskn): Find a better way to encode reward here
+      int label = reward > 0 ? 1 : 0;
+      datum.set_label(label);
+
+      // Save the experience to the database
+      string value;
+      datum_vector[0].SerializeToString(&value);
+      leveldb::Slice key =
+          dynamic_cast<std::ostringstream&>
+          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+      db_->Put(leveldb::WriteOptions(), key, value);
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;

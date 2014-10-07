@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "caffe/net.hpp"
+#include "leveldb/db.h"
 #include <ale_interface.hpp>
 
 namespace caffe {
@@ -152,6 +153,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   virtual int GetMaxAction(const vector<Blob<Dtype>*>& output_blobs);
 
   ALEInterface ale_;
+  leveldb::DB* db_;
 
   DISABLE_COPY_AND_ASSIGN(AtariSolver);
 };
