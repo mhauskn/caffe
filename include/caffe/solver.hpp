@@ -140,8 +140,16 @@ class AtariSolver : public SGDSolver<Dtype> {
   virtual void Solve(const char* resume_file = NULL);
 
  protected:
-  // Runs the Atari to generate data for training
+  // Runs the Atari game to generate data for training
   virtual void PlayAtari();
+
+  // Converts the current game screen to a Datum containing a single
+  // channel.
+  virtual void ReadScreenToDatum(const ALEScreen& screen, Datum* datum);
+
+  // Returns the maximally valued output node corresponding to the
+  // action that should be taken in the Atari game.
+  virtual int GetMaxAction(const vector<Blob<Dtype>*>& output_blobs);
 
   ALEInterface ale_;
 

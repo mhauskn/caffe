@@ -1,6 +1,6 @@
 name: "Atari_quick"
 layers {
-  name: "cifar"
+  name: "atari-data"
   type: DATA
   top: "data"
   top: "label"
@@ -14,16 +14,18 @@ layers {
   include: { phase: TRAIN }
 }
 layers {
-  name: "cifar"
-  type: DATA
+  name: "atari-memory"
+  type: MEMORY_DATA
   top: "data"
   top: "label"
-  data_param {
-    source: "examples/cifar10/cifar10_test_leveldb"
-    batch_size: 100
+  memory_data_param {
+    batch_size: 1
+    channels: 1
+    height: 210
+    width: 160
   }
   transform_param {
-    mean_file: "examples/cifar10/mean.binaryproto"
+  # Maybe need to scale this to match cifar resolution?
   }
   include: { phase: TEST }
 }
@@ -167,7 +169,7 @@ layers {
   blobs_lr: 1
   blobs_lr: 2
   inner_product_param {
-    num_output: 10
+    num_output: 18
     weight_filler {
       type: "gaussian"
       std: 0.1
@@ -178,17 +180,11 @@ layers {
   }
 }
 layers {
-  name: "accuracy"
-  type: ACCURACY
-  bottom: "ip2"
-  bottom: "label"
-  top: "accuracy"
-  include: { phase: TEST }
-}
-layers {
   name: "loss"
   type: SOFTMAX_LOSS
   bottom: "ip2"
   bottom: "label"
   top: "loss"
+  # top: "prob"
+  include: { phase: TRAIN }
 }

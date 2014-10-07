@@ -11,6 +11,8 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/upgrade_proto.hpp"
 
+#include "caffe/data_layers.hpp"
+
 namespace caffe {
 
 template <typename Dtype>
@@ -839,25 +841,70 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
 template <typename Dtype>
 void AtariSolver<Dtype>::PlayAtari() {
+  Caffe::set_phase(Caffe::TEST);
   LOG(INFO) << "Entering Game Playing Phase.";
-
-  // Get the vector of legal actions
   ActionVect legal_actions = ale_.getLegalActionSet();
+  const ALEScreen& screen = ale_.getScreen();
+  vector<Datum> datum_vector(1);
+  vector<Blob<Dtype>*> bottom_vec;
+  const shared_ptr<MemoryDataLayer<Dtype> > memory_layer =
+      boost::static_pointer_cast<MemoryDataLayer<Dtype> >
+      (this->test_nets_[0]->layer_by_name("atari-memory"));
 
-  // Play 10 episodes
-  for (int episode=0; episode < 10; episode++) {
+  for (int episode = 0; episode < 10; episode++) {
+    int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
+      ReadScreenToDatum(screen, &(datum_vector[0]));
+      memory_layer->AddDatumVector(datum_vector);
+      int action = GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
+      // Action a = legal_actions[max_ind];
       Action a = legal_actions[rand() % legal_actions.size()];
       // Apply the action and get the resulting reward
       float reward = ale_.act(a);
       totalReward += reward;
+      steps++;
     }
-    LOG(INFO) << "Episode " << episode << " ended with score: " << totalReward;
+    LOG(INFO) << "Episode " << episode << " ended in " << steps
+              << " steps with score: " << totalReward;
     ale_.reset_game();
   }
 
   LOG(INFO) << "Leaving Game Playing Phase.";
+  Caffe::set_phase(Caffe::TRAIN);
+}
+
+template <typename Dtype>
+void AtariSolver<Dtype>::ReadScreenToDatum(const ALEScreen& screen,
+                                           Datum* datum) {
+  int screen_height = screen.height();
+  int screen_width = screen.width();
+  unsigned char* pixels = screen.getArray();
+  datum->set_channels(1);
+  datum->set_height(screen_height);
+  datum->set_width(screen_width);
+  datum->set_data(pixels, screen_width * screen_height);
+  return;
+}
+
+template <typename Dtype>
+int AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs) {
+  int num_legal_actions = ale_.getLegalActionSet().size();
+  int count = output_blobs[0]->count();
+  CHECK_GT(count, 0) << "Output layer has zero nodes.";
+  CHECK_GE(count, num_legal_actions)
+      << "Output layer has fewer nodes than number of legal actions.";
+  const Dtype* output_data = output_blobs[0]->cpu_data();
+  Dtype max_val = output_data[0];
+  int max_ind = 0;
+  for (int i = 1; i < num_legal_actions; ++i) {
+    // TODO(mhauskn): Handle case of equal values
+    if (output_data[i] > max_val) {
+      max_val = output_data[i];
+      max_ind = i;
+    }
+  }
+  return max_ind;
 }
 
 INSTANTIATE_CLASS(Solver);
