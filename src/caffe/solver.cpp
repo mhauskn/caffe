@@ -895,6 +895,7 @@ void AtariSolver<Dtype>::PlayAtari() {
       steps++;
 
       // Save the experience to the database
+      // TODO(mhauskn): Optimize by not storing duplicate states if identical
       experience.set_action(action);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
