@@ -865,6 +865,7 @@ void AtariSolver<Dtype>::PlayAtari() {
   const shared_ptr<MemoryDataLayer<Dtype> > memory_layer =
       boost::static_pointer_cast<MemoryDataLayer<Dtype> >
       (this->test_nets_[0]->layer_by_name("atari-memory"));
+  Experience experience;
 
   // TODO(mhauskn): anneal epsilon
   float epsilon = 0.5;
@@ -873,6 +874,7 @@ void AtariSolver<Dtype>::PlayAtari() {
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
+      ReadScreenToDatum(screen, experience.mutable_state());
       memory_layer->AddDatumVector(datum_vector);
       int action_indx = GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
 
@@ -892,20 +894,12 @@ void AtariSolver<Dtype>::PlayAtari() {
       totalReward += reward;
       steps++;
 
-      // Append the next screen to the datum
-      Datum& datum = datum_vector[0];
-      string* data_str = datum.mutable_data();
-      const char* pixels = (const char*) screen.getArray();
-      data_str->append(pixels, screen.arraySize());
-
-      // Add the reward as an integer label
-      // TODO(mhauskn): Find a better way to encode reward here
-      int label = reward > 0 ? 1 : 0;
-      datum.set_label(label);
-
       // Save the experience to the database
+      experience.set_action(action);
+      experience.set_reward(reward);
+      ReadScreenToDatum(screen, experience.mutable_new_state());
       string value;
-      datum_vector[0].SerializeToString(&value);
+      experience.SerializeToString(&value);
       leveldb::Slice key =
           dynamic_cast<std::ostringstream&>
           ((std::ostringstream() << std::dec << caffe_rng_rand())).str();

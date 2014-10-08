@@ -28,6 +28,21 @@ message Datum {
   repeated float float_data = 6;
 }
 
+// An Experience is a <state, action, reward, next_state> (SARS) tuple
+// containing a single transition in a Reinforcement Learning
+// environment.
+message Experience {
+  // State before taking an action may be either encoded as an image
+  // or as net activations (float data). Datum's label is ignored.
+  optional Datum state = 1;
+  // Action taken
+  optional int32 action = 2;
+  // Reward recieved after taking an action
+  optional float reward = 3;
+  // State after taking an action
+  optional Datum new_state = 4;
+}
+
 message FillerParameter {
   // The filler type.
   optional string type = 1 [default = 'constant'];
