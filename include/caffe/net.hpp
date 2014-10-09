@@ -67,14 +67,6 @@ class Net {
   void BackwardFrom(int start);
   void BackwardTo(int end);
 
-  /// @brief Run backward using a set of top blobs, and return the result.
-  void Backward(const vector<Blob<Dtype>*>& top);
-
-  /**
-   * Returns the uppermost trained vector.
-   */
-  const vector<Blob<Dtype>*>& TopTrainedVec();
-
   /**
    * @brief Reshape all layers from bottom to top.
    *

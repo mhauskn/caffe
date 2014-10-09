@@ -577,20 +577,6 @@ void Net<Dtype>::BackwardFromTo(int start, int end) {
 }
 
 template <typename Dtype>
-const vector<Blob<Dtype>*>& Net<Dtype>::TopTrainedVec() {
-  for (int i = layers_.size() - 1; i >= 0; --i) {
-    LOG(INFO) << "Layer " << i
-              << " name " << layer_names_[i]
-              << " needs_backwards " << layer_need_backward_[i];
-    // if (layer_need_backward_[i]) {
-    //   return top_vecs_[i];
-    // }
-  }
-  LOG(FATAL) << "Didn't find a trained layer!";
-  return top_vecs_[0];
-}
-
-template <typename Dtype>
 void Net<Dtype>::ForwardDebugInfo(const int layer_id) {
   for (int top_id = 0; top_id < top_vecs_[layer_id].size(); ++top_id) {
     const Blob<Dtype>& blob = *top_vecs_[layer_id][top_id];
@@ -692,20 +678,6 @@ void Net<Dtype>::BackwardTo(int end) {
 template <typename Dtype>
 void Net<Dtype>::Backward() {
   BackwardFromTo(layers_.size() - 1, 0);
-}
-
-template <typename Dtype>
-void Net<Dtype>::Backward(const vector<Blob<Dtype>*> & top) {
-  // Copy top to the last layer that needs backwards
-  for (int l = layers_.size() - 1; l >= 0; --l) {
-    if (layer_need_backward_[l]) {
-      for (int i = 0; i < top.size(); ++i) {
-        net_output_blobs_[i]->CopyFrom(*top[i]);
-      }
-      break;
-    }
-  }
-  return Backward();
 }
 
 template <typename Dtype>

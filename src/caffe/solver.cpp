@@ -175,73 +175,45 @@ void Solver<Dtype>::Solve(const char* resume_file) {
   // should be given, and we will just provide dummy vecs.
   vector<Blob<Dtype>*> bottom_vec;
   for (; iter_ < param_.max_iter(); ++iter_) {
-    vector<vector<Blob<Dtype>*> > top_vecs;
-    LOG(INFO) << "Starting Data Collection.";
-    for (int collect=0; collect<100; ++collect) {
-      // Save a snapshot if needed.
-      // if (param_.snapshot() && iter_ > start_iter &&
-      //     iter_ % param_.snapshot() == 0) {
-      //   Snapshot();
-      // }
+    // Save a snapshot if needed.
+    if (param_.snapshot() && iter_ > start_iter &&
+        iter_ % param_.snapshot() == 0) {
+      Snapshot();
+    }
 
-      // if (param_.test_interval() && iter_ % param_.test_interval() == 0
-      //     && (iter_ > 0 || param_.test_initialization())) {
-      //   TestAll();
-      // }
+    if (param_.test_interval() && iter_ % param_.test_interval() == 0
+        && (iter_ > 0 || param_.test_initialization())) {
+      TestAll();
+    }
 
-      const bool display = param_.display() && iter_ % param_.display() == 0;
-      net_->set_debug_info(display && param_.debug_info());
-      Dtype loss;
-      net_->Forward(bottom_vec, &loss);
-      const vector<Blob<Dtype>*>& out_blobs = net_->TopTrainedVec();
-      LOG(INFO) << "outblobs size: " << out_blobs.size()
-                << " num " << out_blobs[0]->num()
-                << " chan " << out_blobs[0]->channels()
-                << " width " << out_blobs[0]->width()
-                << " height " << out_blobs[0]->height()
-                << " count " << out_blobs[0]->count();
-      exit(0);
-      vector<Blob<Dtype>*> top_vec;
-      for (int b = 0; b < out_blobs.size(); ++b) {
-        shared_ptr<Blob<Dtype> > blob_pointer(new Blob<Dtype>());
-        blob_pointer.get()->CopyFrom(*out_blobs[b], true, true);
-        top_vec.push_back(blob_pointer.get());
-      }
-      top_vecs.push_back(top_vec);
-
-      // Dtype loss = net_->ForwardBackward(bottom_vec);
-      if (display) {
-        LOG(INFO) << "Iteration " << iter_ << ", loss = " << loss;
-        const vector<Blob<Dtype>*>& result = net_->output_blobs();
-        int score_index = 0;
-        for (int j = 0; j < result.size(); ++j) {
-          const Dtype* result_vec = result[j]->cpu_data();
-          const string& output_name =
-              net_->blob_names()[net_->output_blob_indices()[j]];
-          const Dtype loss_weight =
-              net_->blob_loss_weights()[net_->output_blob_indices()[j]];
-          for (int k = 0; k < result[j]->count(); ++k) {
-            ostringstream loss_msg_stream;
-            if (loss_weight) {
-              loss_msg_stream << " (* " << loss_weight
-                              << " = " << loss_weight * result_vec[k] << " loss)";
-            }
-            LOG(INFO) << "    Train net output #"
-                      << score_index++ << ": " << output_name << " = "
-                      << result_vec[k] << loss_msg_stream.str();
+    const bool display = param_.display() && iter_ % param_.display() == 0;
+    net_->set_debug_info(display && param_.debug_info());
+    Dtype loss = net_->ForwardBackward(bottom_vec);
+    if (display) {
+      LOG(INFO) << "Iteration " << iter_ << ", loss = " << loss;
+      const vector<Blob<Dtype>*>& result = net_->output_blobs();
+      int score_index = 0;
+      for (int j = 0; j < result.size(); ++j) {
+        const Dtype* result_vec = result[j]->cpu_data();
+        const string& output_name =
+            net_->blob_names()[net_->output_blob_indices()[j]];
+        const Dtype loss_weight =
+            net_->blob_loss_weights()[net_->output_blob_indices()[j]];
+        for (int k = 0; k < result[j]->count(); ++k) {
+          ostringstream loss_msg_stream;
+          if (loss_weight) {
+            loss_msg_stream << " (* " << loss_weight
+                            << " = " << loss_weight * result_vec[k] << " loss)";
           }
+          LOG(INFO) << "    Train net output #"
+              << score_index++ << ": " << output_name << " = "
+              << result_vec[k] << loss_msg_stream.str();
         }
       }
     }
-    LOG(INFO) << "Done with data collection.";
 
-    LOG(INFO) << "Starting backprops.";
-    for (int collect=0; collect<100; ++collect) {
-      net_->Backward(top_vecs[collect]);
-      ComputeUpdateValue();
-      net_->Update();
-    }
-    LOG(INFO) << "Finished backprops.";
+    ComputeUpdateValue();
+    net_->Update();
   }
   // Always save a snapshot after optimization, unless overridden by setting
   // snapshot_after_train := false.
