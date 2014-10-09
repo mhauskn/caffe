@@ -761,15 +761,13 @@ void AtariSolver<Dtype>::PreSolve() {
   // Load the ROM file
   ale_.loadROM("/home/matthew/projects/ale-assets/roms/asterix.bin");
 
-  // Initialize and load leveldb
-  string db_path = "examples/atari/atari_train_leveldb";
-  leveldb::Options options;
-  options.create_if_missing = true;
-  options.error_if_exists = true;
-  DestroyDB(db_path, options);
-  leveldb::Status status;
-  status = leveldb::DB::Open(options, db_path, &db_);
-  CHECK(status.ok()) << "Failed to open leveldb.";
+  // Copy the leveldb pointer from the experience layer
+  shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
+      boost::dynamic_pointer_cast<ExperienceDataLayer<Dtype> >
+      (this->net_->layers()[0]);
+  CHECK(experience_layer) <<
+      "Input Layer to the Atari Train Net must be a ExperienceDataLayer.";
+  db_ = experience_layer->db_ptr();
 }
 
 template <typename Dtype>
@@ -805,7 +803,13 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
     this->net_->set_debug_info(display && this->param_.debug_info());
-    Dtype loss = this->net_->ForwardBackward(bottom_vec);
+
+    // Run the first forward pass on the next state values
+    this->net_->Forward(bottom_vec);
+    // Run the next forward pass on the previous state values
+    Dtype loss;
+    this->net_->Forward(bottom_vec, &loss);
+
     if (display) {
       LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
       const vector<Blob<Dtype>*>& result = this->net_->output_blobs();
@@ -829,8 +833,8 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       }
     }
 
-    this->ComputeUpdateValue();
-    this->net_->Update();
+    // this->ComputeUpdateValue();
+    // this->net_->Update();
   }
   // Always save a snapshot after optimization, unless overridden by setting
   // snapshot_after_train := false.
@@ -851,7 +855,6 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->PlayAtari();
   }
   LOG(INFO) << "Optimization Done.";
-  delete db_;
 }
 
 template <typename Dtype>
@@ -863,20 +866,22 @@ void AtariSolver<Dtype>::PlayAtari() {
   vector<Datum> datum_vector(1);
   vector<Blob<Dtype>*> bottom_vec;
   const shared_ptr<MemoryDataLayer<Dtype> > memory_layer =
-      boost::static_pointer_cast<MemoryDataLayer<Dtype> >
-      (this->test_nets_[0]->layer_by_name("atari-memory"));
+      boost::dynamic_pointer_cast<MemoryDataLayer<Dtype> >
+      (this->test_nets_[0]->layers()[0]);
+  CHECK(memory_layer) <<
+      "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
   Experience experience;
 
   // TODO(mhauskn): anneal epsilon
-  float epsilon = 0.5;
-  for (int episode = 0; episode < 10; episode++) {
+  float epsilon = 1.0;
+  for (int episode = 0; episode < 1; episode++) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
-      memory_layer->AddDatumVector(datum_vector);
-      int action_indx = GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
+      // memory_layer->AddDatumVector(datum_vector);
+      int action_indx = 0; //GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
 
       // Epsilon-greedy action selection
       // TODO(mhauskn): Speedup by only doing forward if needed
