@@ -17,10 +17,10 @@ void ExperienceDataLayer<Dtype>::Forward_gpu(
   } else {
     caffe_copy(prefetch_states_.count(), prefetch_states_.cpu_data(),
                (*top)[0]->mutable_gpu_data());
-    // if (this->output_labels_) {
-    //   caffe_copy(prefetch_label_.count(), prefetch_label_.cpu_data(),
-    //              (*top)[1]->mutable_gpu_data());
-    // }
+    if (this->output_labels_) {
+      caffe_copy(labels_->count(), labels_->cpu_data(),
+                 (*top)[1]->mutable_gpu_data());
+    }
     // Start a new prefetch thread
     this->CreatePrefetchThread();
   }

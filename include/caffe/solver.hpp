@@ -147,13 +147,21 @@ class AtariSolver : public SGDSolver<Dtype> {
   // Converts the current game screen to a Datum containing a single
   // channel.
   virtual void ReadScreenToDatum(const ALEScreen& screen, Datum* datum);
-  // Returns the maximally valued output node corresponding to the
+  // Finds the maximally valued output node(s) corresponding to the
   // action that should be taken in the Atari game. Selects randomly
   // in the case that multiple nodes have the same maximal value.
-  virtual int GetMaxAction(const vector<Blob<Dtype>*>& output_blobs);
+  // Optionally also returns the value(s) of these maximal actions.
+  // It is assumed that the number of max_actions equals the
+  // output_blobs[0]->num().
+  virtual void GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
+                            Action* max_actions = NULL,
+                            Dtype* max_action_vals = NULL);
 
   ALEInterface ale_;
   shared_ptr<leveldb::DB> db_;
+  shared_ptr<vector<int> > actions_;
+  shared_ptr<vector<float> > rewards_;
+  shared_ptr<Blob<Dtype> > labels_;
 
   DISABLE_COPY_AND_ASSIGN(AtariSolver);
 };

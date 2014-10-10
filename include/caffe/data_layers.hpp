@@ -150,6 +150,9 @@ class ExperienceDataLayer : public BasePrefetchingDataLayer<Dtype> {
       vector<Blob<Dtype>*>* top);
 
   const shared_ptr<leveldb::DB>& db_ptr() const { return db_; }
+  const shared_ptr<vector<int> >& actions_ptr() const { return actions_; }
+  const shared_ptr<vector<float> >& rewards_ptr() const { return rewards_; }
+  const shared_ptr<Blob<Dtype> >& labels_ptr() const { return labels_; }
 
  protected:
   virtual void InternalThreadEntry();
@@ -160,9 +163,10 @@ class ExperienceDataLayer : public BasePrefetchingDataLayer<Dtype> {
 
   Blob<Dtype> prefetch_states_;
   Blob<Dtype> prefetch_new_states_;
-  vector<int> actions;
-  vector<float> rewards;
-
+  shared_ptr<vector<int> > actions_;
+  shared_ptr<vector<float> > rewards_;
+  // These labels are computed on the fly and fed to the network
+  shared_ptr<Blob<Dtype> > labels_;
   // Keeps track of whether this is the first or second forward pass
   bool first_forward_;
 };

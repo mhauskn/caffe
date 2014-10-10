@@ -55,32 +55,34 @@ void ExperienceDataLayer<Dtype>::DataLayerSetUp(
   experience.ParseFromString(iter_->value().ToString());
   const Datum& datum = experience.state();
 
-  (*top)[0]->Reshape(
-      this->layer_param_.data_param().batch_size(), datum.channels(),
-      datum.height(), datum.width());
+  const int batch_size = this->layer_param_.data_param().batch_size();
+  (*top)[0]->Reshape(batch_size, datum.channels(), datum.height(),
+                     datum.width());
 
   // Need to do this to please BasePrefetchingDataLayer::LayerSetup
   this->prefetch_data_.Reshape(1,1,1,1);
   this->prefetch_label_.Reshape(1,1,1,1);
 
   // Reshape the prefetch blobs
-  this->prefetch_states_.Reshape(
-      this->layer_param_.data_param().batch_size(),
-      datum.channels(), datum.height(), datum.width());
-  this->prefetch_new_states_.Reshape(
-      this->layer_param_.data_param().batch_size(),
-      datum.channels(), datum.height(), datum.width());
+  this->prefetch_states_.Reshape(batch_size, datum.channels(),
+                                 datum.height(), datum.width());
+  this->prefetch_new_states_.Reshape(batch_size, datum.channels(),
+                                     datum.height(), datum.width());
+
+  // Reshape the action and reward vectors
+  actions_.reset(new vector<int>(batch_size));
+  rewards_.reset(new vector<float>(batch_size));
 
   LOG(INFO) << "output data size: " << (*top)[0]->num() << ","
       << (*top)[0]->channels() << "," << (*top)[0]->height() << ","
       << (*top)[0]->width();
 
-  // TODO(mhauskn): Reshape labels correctly
   // label
   if (this->output_labels_) {
-    (*top)[1]->Reshape(this->layer_param_.data_param().batch_size(), 1, 1, 1);
-    this->prefetch_label_.Reshape(this->layer_param_.data_param().batch_size(),
-        1, 1, 1);
+    // TODO(mhauskn): Remove hardcoded num_actions
+    const static int num_actions = 18;
+    (*top)[1]->Reshape(batch_size, num_actions, 1, 1);
+    labels_.reset(new Blob<Dtype>(batch_size, num_actions, 1, 1));
   }
   // datum size
   this->datum_channels_ = datum.channels();
@@ -109,8 +111,8 @@ void ExperienceDataLayer<Dtype>::InternalThreadEntry() {
                                       this->mean_, new_state_data);
 
     // Store the actions and rewards
-    actions.push_back(experience.action());
-    rewards.push_back(experience.reward());
+    (*actions_)[item_id] = experience.action();
+    (*rewards_)[item_id] = experience.reward();
 
     // go to the next iter
     iter_->Next();
@@ -136,10 +138,10 @@ void ExperienceDataLayer<Dtype>::Forward_cpu(
   } else {
     caffe_copy(prefetch_states_.count(), prefetch_states_.cpu_data(),
                (*top)[0]->mutable_cpu_data());
-    // if (this->output_labels_) {
-    //   caffe_copy(prefetch_label_.count(), prefetch_label_.cpu_data(),
-    //              (*top)[1]->mutable_cpu_data());
-    // }
+    if (this->output_labels_) {
+      caffe_copy(labels_->count(), labels_->cpu_data(),
+                 (*top)[1]->mutable_cpu_data());
+    }
     // Start a new prefetch thread
     this->CreatePrefetchThread();
   }

@@ -767,7 +767,10 @@ void AtariSolver<Dtype>::PreSolve() {
       (this->net_->layers()[0]);
   CHECK(experience_layer) <<
       "Input Layer to the Atari Train Net must be a ExperienceDataLayer.";
-  db_ = experience_layer->db_ptr();
+  db_      = experience_layer->db_ptr();
+  actions_ = experience_layer->actions_ptr();
+  rewards_ = experience_layer->rewards_ptr();
+  labels_  = experience_layer->labels_ptr();
 }
 
 template <typename Dtype>
@@ -806,9 +809,40 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
     // Run the first forward pass on the next state values
     this->net_->Forward(bottom_vec);
+
+    // Grab the values that went into the loss layer
+    const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
+    // Here we assume that the last layer is a loss layer so the 2nd
+    // to last layer contains the blobs of interest.
+    const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
+    // LOG(INFO) << output_blobs[0]->num() << " "
+    //           << output_blobs[0]->channels() << " "
+    //           << output_blobs[0]->height() << " "
+    //           << output_blobs[0]->width();
+
+    // Compute the max over all next-state values
+    int batch_size = output_blobs[0]->num();
+    CHECK_EQ(labels_->count(), output_blobs[0]->count())
+        << "Labels count does not equal output_blobs[0] count.";
+    // Copy the output activations into the labels
+    labels_->CopyFrom(*output_blobs[0]);
+    Dtype* label_data = labels_->mutable_cpu_data(); // Blob: 100,18,1,1
+    Dtype max_action_vals[batch_size];
+    GetMaxAction(output_blobs, NULL, max_action_vals);
+    Dtype gamma = 1.0;
+    CHECK_EQ(batch_size, rewards_->size())
+        << "Batch size does not equal rewards size!";
+    CHECK_EQ(batch_size, actions_->size())
+        << "Batch size does not equal actions size!";
+    // Compute the gamma-discounted max over next state actions and
+    // use this compute the labels.
+    for (int n = 0; n < batch_size; ++n) {
+      Dtype target = rewards_->at(n) + gamma * max_action_vals[n];
+      int offset = labels_->offset(n) + actions_->at(n);
+      label_data[offset] = target;
+    }
     // Run the next forward pass on the previous state values
-    Dtype loss;
-    this->net_->Forward(bottom_vec, &loss);
+    Dtype loss = this->net_->ForwardBackward(bottom_vec);
 
     if (display) {
       LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
@@ -934,27 +968,52 @@ void AtariSolver<Dtype>::ReadScreenToDatum(const ALEScreen& screen,
 }
 
 template <typename Dtype>
-int AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs) {
+void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
+                                      Action* max_actions,
+                                      Dtype* max_action_vals) {
   int num_legal_actions = ale_.getLegalActionSet().size();
-  int count = output_blobs[0]->count();
-  CHECK_GT(count, 0) << "Output layer has zero nodes.";
-  CHECK_GE(count, num_legal_actions)
-      << "Output layer has fewer nodes than number of legal actions.";
+  Blob<Dtype>* output_blob = output_blobs[0];
+  CHECK_GE(output_blob->channels(), num_legal_actions)
+      << "Output layer has fewer channels than number of legal actions.";
   const Dtype* output_data = output_blobs[0]->cpu_data();
-  Dtype max_val = output_data[0];
-  vector<int> max_inds;
-  max_inds.push_back(0);
-  for (int i = 1; i < num_legal_actions; ++i) {
-    if (output_data[i] > max_val) {
-      max_inds.clear();
-      max_val = output_data[i];
-      max_inds.push_back(i);
-    } else if (output_data[i] == max_val) {
-      LOG(INFO) << "Collision!";
-      max_inds.push_back(i);
+  if (max_actions != NULL) {
+    for (int n = 0; n < output_blob->num(); ++n) {
+      int start_indx = output_blob->offset(n);
+      Dtype max_val = output_data[start_indx];
+      vector<Action> max_inds;
+      max_inds.push_back(Action(0));
+      for (int i = start_indx + 1; i < start_indx + num_legal_actions; ++i) {
+        if (output_data[i] > max_val) {
+          max_inds.clear();
+          max_val = output_data[i];
+          max_inds.push_back(Action(i - start_indx));
+        } else if (output_data[i] == max_val) {
+          LOG(INFO) << "Collision!";
+          max_inds.push_back(Action(i - start_indx));
+        }
+      }
+      Action max_action = max_inds[caffe_rng_rand() % max_inds.size()];
+      max_actions[n] = max_action;
+      if (max_action_vals != NULL) {
+        max_action_vals[n] = max_val;
+      }
+    }
+  } else {
+    // Quicker version to just get the maximum values
+    for (int n = 0; n < output_blob->num(); ++n) {
+      int start_indx = output_blob->offset(n);
+      Dtype max_val = output_data[start_indx];
+      for (int i = start_indx + 1; i < start_indx + num_legal_actions; ++i) {
+        if (output_data[i] > max_val) {
+          max_val = output_data[i];
+        }
+      }
+      if (max_action_vals != NULL) {
+        max_action_vals[n] = max_val;
+      }
     }
   }
-  return max_inds[caffe_rng_rand() % max_inds.size()];
+  return;
 }
 
 INSTANTIATE_CLASS(Solver);

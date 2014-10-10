@@ -6,7 +6,7 @@ layers {
   top: "label"
   data_param {
     source: "examples/atari/atari_train_leveldb"
-    batch_size: 100
+    batch_size: 30
   }
   include: { phase: TRAIN }
 }
@@ -176,12 +176,12 @@ layers {
     }
   }
 }
+# Consider also the CrossEntropyLossLayer
 layers {
   name: "loss"
-  type: SOFTMAX_LOSS
+  type: EUCLIDEAN_LOSS
   bottom: "ip2"
   bottom: "label"
   top: "loss"
-  # top: "prob"
   include: { phase: TRAIN }
 }
