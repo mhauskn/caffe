@@ -3,6 +3,7 @@
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
 #include <leveldb/db.h>
+#include <leveldb/write_batch.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/highgui/highgui_c.h>
@@ -117,6 +118,31 @@ leveldb::Options GetLevelDBOptions() {
   leveldb::Options options;
   options.max_open_files = 100;
   return options;
+}
+
+void DestroyLevelDB(const string& db_path) {
+  leveldb::Status status = DestroyDB(db_path, GetLevelDBOptions());
+  CHECK(status.ok()) << "Failed to destroy leveldb "
+                     << db_path
+                     << std::endl
+                     << status.ToString();
+  return;
+}
+
+void LevelDB_DeleteAll(leveldb::DB* db, bool sync) {
+  leveldb::WriteBatch batch;
+  leveldb::Iterator* iter = db->NewIterator(leveldb::ReadOptions());
+  iter->SeekToFirst();
+  while (iter->Valid()) {
+    batch.Delete(iter->key());
+    iter->Next();
+  }
+  leveldb::WriteOptions write_options;
+  write_options.sync = sync;
+  leveldb::Status status = db->Write(write_options, &batch);
+  CHECK(status.ok()) << "Failed to destroy leveldb: "
+                     << status.ToString();
+  return;
 }
 
 // Verifies format of data stored in HDF5 file and reshapes blob accordingly.

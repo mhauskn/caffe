@@ -17,18 +17,11 @@ namespace caffe {
 template <typename Dtype>
 ExperienceDataLayer<Dtype>::~ExperienceDataLayer<Dtype>() {
   this->JoinPrefetchThread();
-  // Destroy the database once done
-  DestroyDB(this->layer_param_.experience_param().source(),
-            GetLevelDBOptions());
 }
 
 template <typename Dtype>
 void ExperienceDataLayer<Dtype>::DataLayerSetUp(
     const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
-  // Destroy DB
-  DestroyDB(this->layer_param_.experience_param().source(),
-            GetLevelDBOptions());
-
   // Initialize DB
   leveldb::DB* db_temp;
   leveldb::Options options = GetLevelDBOptions();
@@ -113,7 +106,7 @@ void ExperienceDataLayer<Dtype>::InternalThreadEntry() {
     iter_->Next();
     if (!iter_->Valid()) {
       // We have reached the end. Restart from the first.
-      DLOG(INFO) << "Restarting data prefetching from start.";
+      LOG(INFO) << "Restarting data prefetching from start.";
       iter_->SeekToFirst();
     }
   }

@@ -16,6 +16,7 @@
 namespace leveldb {
 // Forward declaration for leveldb::Options to be used in GetlevelDBOptions().
 struct Options;
+struct DB;
 }
 
 namespace caffe {
@@ -103,6 +104,12 @@ inline bool ReadImageToDatum(const string& filename, const int label,
 }
 
 leveldb::Options GetLevelDBOptions();
+
+void DestroyLevelDB(const string& db_path);
+
+// Destroys a leveldb by deleting each key in a batch. By default this
+// destruction is synchronous.
+void LevelDB_DeleteAll(leveldb::DB* db, bool sync = true);
 
 template <typename Dtype>
 void hdf5_load_nd_dataset_helper(

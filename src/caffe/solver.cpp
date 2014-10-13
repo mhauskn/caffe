@@ -805,6 +805,7 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
         this->iter_ % this->param_.test_interval() == 0) {
       this->PlayAtari();
     }
+    exit(0);
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
@@ -827,15 +828,21 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     // Copy the output activations into the labels
     labels_->CopyFrom(*output_blobs[0]);
     Dtype* label_data = labels_->mutable_cpu_data(); // Blob: 100,18,1,1
+    // Zero out the labels
+    for (int i = 0; i < labels_->count(); ++i) {
+      label_data[i] = 0;
+    }
+
     Dtype max_action_vals[batch_size];
     GetMaxAction(output_blobs, NULL, max_action_vals);
-    Dtype gamma = 1.0;
     CHECK_EQ(batch_size, rewards_->size())
         << "Batch size does not equal rewards size!";
     CHECK_EQ(batch_size, actions_->size())
         << "Batch size does not equal actions size!";
     // Compute the gamma-discounted max over next state actions and
     // use this compute the labels.
+    // TODO(mhauskn): Remove hardcoded gamma
+    Dtype gamma = 0.0;
     for (int n = 0; n < batch_size; ++n) {
       Dtype target = rewards_->at(n) + gamma * max_action_vals[n];
       int offset = labels_->offset(n) + actions_->at(n);
@@ -867,8 +874,8 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       }
     }
 
-    // this->ComputeUpdateValue();
-    // this->net_->Update();
+    this->ComputeUpdateValue();
+    this->net_->Update();
   }
   // Always save a snapshot after optimization, unless overridden by setting
   // snapshot_after_train := false.
@@ -884,10 +891,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->net_->Forward(bottom_vec, &loss);
     LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
   }
-  if (this->param_.test_interval() &&
-      this->iter_ % this->param_.test_interval() == 0) {
-    this->PlayAtari();
-  }
+  // if (this->param_.test_interval() &&
+  //     this->iter_ % this->param_.test_interval() == 0) {
+  //   this->PlayAtari();
+  // }
   LOG(INFO) << "Optimization Done.";
 }
 
@@ -895,6 +902,9 @@ template <typename Dtype>
 void AtariSolver<Dtype>::PlayAtari() {
   Caffe::set_phase(Caffe::TEST);
   LOG(INFO) << "Entering Game Playing Phase.";
+
+  LevelDB_DeleteAll(db_.get());
+
   ActionVect legal_actions = ale_.getLegalActionSet();
   const ALEScreen& screen = ale_.getScreen();
   vector<Datum> datum_vector(1);
@@ -910,7 +920,7 @@ void AtariSolver<Dtype>::PlayAtari() {
   // TODO(mhauskn): anneal epsilon
   float epsilon = 1.0;
   // TODO(mhauskn): Remove hardcoded number episodes to play
-  for (int episode = 0; episode < 1; episode++) {
+  for (int episode = 0; episode < 2; episode++) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
