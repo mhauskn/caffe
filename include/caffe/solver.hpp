@@ -156,6 +156,15 @@ class AtariSolver : public SGDSolver<Dtype> {
   virtual void GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
                             Action* max_actions = NULL,
                             Dtype* max_action_vals = NULL);
+  // Running a ForwardBackward is a bit different since labels need
+  // to be computed from the outputs of the next state values.
+  virtual Dtype ForwardBackward(const vector<Blob<Dtype>*>& bottom_vec);
+  // Compute the labels from the next-state-output activations.
+  virtual void ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
+                             const vector<int>& actions,
+                             const vector<float>& rewards,
+                             const Dtype gamma,
+                             Blob<Dtype>* labels);
 
   ALEInterface ale_;
   shared_ptr<leveldb::DB> db_;

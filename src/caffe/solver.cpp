@@ -801,56 +801,16 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       this->Snapshot();
     }
 
-    if (this->param_.test_interval() &&
-        this->iter_ % this->param_.test_interval() == 0) {
-      this->PlayAtari();
-    }
-    exit(0);
+    // if (this->param_.test_interval() &&
+    //     this->iter_ % this->param_.test_interval() == 0) {
+    //   this->PlayAtari();
+    // }
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
     this->net_->set_debug_info(display && this->param_.debug_info());
 
-    // Run the first forward pass on the next state values
-    this->net_->Forward(bottom_vec);
-
-    // Grab the values that went into the loss layer
-    const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
-
-    // Here we assume that the last layer is a loss layer so the 2nd
-    // to last layer contains the blobs of interest.
-    const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
-
-    // Compute the max over all next-state values
-    int batch_size = output_blobs[0]->num();
-    CHECK_EQ(labels_->count(), output_blobs[0]->count())
-        << "Labels count does not equal output_blobs[0] count.";
-    // Copy the output activations into the labels
-    labels_->CopyFrom(*output_blobs[0]);
-    Dtype* label_data = labels_->mutable_cpu_data(); // Blob: 100,18,1,1
-    // Zero out the labels
-    for (int i = 0; i < labels_->count(); ++i) {
-      label_data[i] = 0;
-    }
-
-    Dtype max_action_vals[batch_size];
-    GetMaxAction(output_blobs, NULL, max_action_vals);
-    CHECK_EQ(batch_size, rewards_->size())
-        << "Batch size does not equal rewards size!";
-    CHECK_EQ(batch_size, actions_->size())
-        << "Batch size does not equal actions size!";
-    // Compute the gamma-discounted max over next state actions and
-    // use this compute the labels.
-    // TODO(mhauskn): Remove hardcoded gamma
-    Dtype gamma = 0.0;
-    for (int n = 0; n < batch_size; ++n) {
-      Dtype target = rewards_->at(n) + gamma * max_action_vals[n];
-      int offset = labels_->offset(n) + actions_->at(n);
-      label_data[offset] = target;
-    }
-    // Run the next forward pass on the previous state values
-    Dtype loss = this->net_->ForwardBackward(bottom_vec);
-
+    Dtype loss = ForwardBackward(bottom_vec);
     if (display) {
       LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
       const vector<Blob<Dtype>*>& result = this->net_->output_blobs();
@@ -927,18 +887,18 @@ void AtariSolver<Dtype>::PlayAtari() {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
 
-      // memory_layer->AddDatumVector(datum_vector);
-      int action_indx = 0; //GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
-
       // Epsilon-greedy action selection
-      // TODO(mhauskn): Speedup by only doing forward if needed
       Action action;
       float f;
       caffe_rng_uniform(1, 0.f, 1.f, &f);
       if (f < epsilon) {
         action = legal_actions[caffe_rng_rand() % legal_actions.size()];
       } else {
-        action = legal_actions[action_indx];
+        memory_layer->AddDatumVector(datum_vector);
+        Action max_action_ind;
+        GetMaxAction(this->test_nets_[0]->Forward(bottom_vec),
+                     &max_action_ind);
+        action = legal_actions[max_action_ind];
       }
 
       // Apply the action and get the resulting reward
@@ -1030,6 +990,56 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
         max_action_vals[n] = max_val;
       }
     }
+  }
+  return;
+}
+
+template <typename Dtype>
+Dtype AtariSolver<Dtype>::ForwardBackward(
+    const vector<Blob<Dtype>*>& bottom_vec) {
+  // TODO(mhauskn): Remove hardcoded gamma
+  Dtype gamma = 0;
+  // Run the first forward pass on the next state values
+  this->net_->Forward(bottom_vec);
+  const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
+  // Here we assume that the last layer is a loss layer so the 2nd
+  // to last layer contains the blobs of interest.
+  const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
+  // Compute the targets for forward-backward
+  ComputeLabels(output_blobs, *actions_, *rewards_, gamma, labels_.get());
+  // Run the next forward pass on the previous state values
+  return this->net_->ForwardBackward(bottom_vec);
+}
+
+template <typename Dtype>
+void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
+                                       const vector<int>& actions,
+                                       const vector<float>& rewards,
+                                       const Dtype gamma,
+                                       Blob<Dtype>* labels) {
+  int batch_size = output_blobs[0]->num();
+  CHECK_EQ(labels->count(), output_blobs[0]->count())
+      << "Labels count does not equal output_blobs[0] count.";
+  CHECK_EQ(batch_size, rewards.size()) << "Output size must equal reward size!";
+  CHECK_EQ(batch_size, actions.size()) << "Output size must equal action size!";
+
+  Dtype* label_data = labels->mutable_cpu_data();
+  // TODO(mhauskn): Shouldn't need to zero the labels. Look into only
+  // backpropping the label that get modified below.
+  for (int i = 0; i < labels->count(); ++i) {
+    label_data[i] = 0;
+  }
+
+  // Compute the max over all next-state values
+  Dtype max_action_vals[batch_size];
+  GetMaxAction(output_blobs, NULL, max_action_vals);
+
+  // Compute the gamma-discounted max over next state actions and
+  // use this compute the labels.
+  for (int n = 0; n < batch_size; ++n) {
+    Dtype target = rewards[n] + gamma * max_action_vals[n];
+    int offset = labels->offset(n) + actions[n];
+    label_data[offset] = target;
   }
   return;
 }
