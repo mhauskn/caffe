@@ -4,9 +4,13 @@ layers {
   type: EXPERIENCE_DATA
   top: "data"
   top: "label"
-  data_param {
+  experience_param {
     source: "examples/atari/atari_train_leveldb"
     batch_size: 30
+    channels: 1
+    height: 210
+    width: 160
+    num_actions: 18
   }
   include: { phase: TRAIN }
 }

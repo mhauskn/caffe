@@ -10,8 +10,9 @@
 #include "caffe/util/io.hpp"
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/upgrade_proto.hpp"
-
 #include "caffe/data_layers.hpp"
+
+#include "leveldb/write_batch.h"
 
 namespace caffe {
 
@@ -759,7 +760,9 @@ template <typename Dtype>
 void AtariSolver<Dtype>::PreSolve() {
   SGDSolver<Dtype>::PreSolve();
   // Load the ROM file
-  ale_.loadROM("/home/matthew/projects/ale-assets/roms/asterix.bin");
+  // TOOD(mhauskn): Remove this hardcoded path. Likely refactor to solver prototext
+  // Pong is good to start with since rewards are either -1, 0, or 1
+  ale_.loadROM("/home/matthew/projects/ale-assets/roms/pong.bin");
 
   // Copy the leveldb pointer from the experience layer
   shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
@@ -812,13 +815,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
     // Grab the values that went into the loss layer
     const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
+
     // Here we assume that the last layer is a loss layer so the 2nd
     // to last layer contains the blobs of interest.
     const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
-    // LOG(INFO) << output_blobs[0]->num() << " "
-    //           << output_blobs[0]->channels() << " "
-    //           << output_blobs[0]->height() << " "
-    //           << output_blobs[0]->width();
 
     // Compute the max over all next-state values
     int batch_size = output_blobs[0]->num();
@@ -905,15 +905,18 @@ void AtariSolver<Dtype>::PlayAtari() {
   CHECK(memory_layer) <<
       "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
   Experience experience;
+  leveldb::WriteBatch batch;
 
   // TODO(mhauskn): anneal epsilon
   float epsilon = 1.0;
+  // TODO(mhauskn): Remove hardcoded number episodes to play
   for (int episode = 0; episode < 1; episode++) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
+
       // memory_layer->AddDatumVector(datum_vector);
       int action_indx = 0; //GetMaxAction(this->test_nets_[0]->Forward(bottom_vec));
 
@@ -943,12 +946,17 @@ void AtariSolver<Dtype>::PlayAtari() {
       leveldb::Slice key =
           dynamic_cast<std::ostringstream&>
           ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      db_->Put(leveldb::WriteOptions(), key, value);
+      batch.Put(key, value);
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
     ale_.reset_game();
   }
+
+  // Write the batch of data to the db
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+  leveldb::Status status = db_->Write(write_options, &batch);
 
   LOG(INFO) << "Leaving Game Playing Phase.";
   Caffe::set_phase(Caffe::TRAIN);

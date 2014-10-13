@@ -476,7 +476,13 @@ message ExperienceDataParameter {
   // Specify the data source.
   optional string source = 1;
   // Specify the batch size.
-  optional uint32 batch_size = 4;
+  optional uint32 batch_size = 2;
+  // Specify the number channels.
+  optional uint32 channels = 3;
+  optional uint32 height = 4;
+  optional uint32 width = 5;
+  // Specify the number of channels.
+  optional uint32 num_actions = 6;
 }
 
 // Message that stores parameters used by EltwiseLayer
