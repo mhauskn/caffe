@@ -143,7 +143,7 @@ class AtariSolver : public SGDSolver<Dtype> {
  protected:
   virtual void PreSolve();
   // Runs the Atari game to generate data for training
-  virtual void PlayAtari();
+  virtual void PlayAtari(const int test_net_id);
   // Converts the current game screen to a Datum containing a single
   // channel.
   virtual void ReadScreenToDatum(const ALEScreen& screen, Datum* datum);

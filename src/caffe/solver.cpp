@@ -859,9 +859,11 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 }
 
 template <typename Dtype>
-void AtariSolver<Dtype>::PlayAtari() {
-  Caffe::set_phase(Caffe::TEST);
+void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   LOG(INFO) << "Entering Game Playing Phase.";
+  Caffe::set_phase(Caffe::TEST);
+  CHECK_NOTNULL(this->test_nets_[test_net_id].get())->
+      ShareTrainedLayersWith(this->net_.get());
 
   LevelDB_DeleteAll(db_.get());
 
@@ -871,7 +873,7 @@ void AtariSolver<Dtype>::PlayAtari() {
   vector<Blob<Dtype>*> bottom_vec;
   const shared_ptr<MemoryDataLayer<Dtype> > memory_layer =
       boost::dynamic_pointer_cast<MemoryDataLayer<Dtype> >
-      (this->test_nets_[0]->layers()[0]);
+      (this->test_nets_[test_net_id]->layers()[0]);
   CHECK(memory_layer) <<
       "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
   Experience experience;
@@ -880,7 +882,7 @@ void AtariSolver<Dtype>::PlayAtari() {
   // TODO(mhauskn): anneal epsilon
   float epsilon = 1.0;
   // TODO(mhauskn): Remove hardcoded number episodes to play
-  for (int episode = 0; episode < 2; episode++) {
+  for (int episode = 0; episode < 100; episode++) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
@@ -896,7 +898,7 @@ void AtariSolver<Dtype>::PlayAtari() {
       } else {
         memory_layer->AddDatumVector(datum_vector);
         Action max_action_ind;
-        GetMaxAction(this->test_nets_[0]->Forward(bottom_vec),
+        GetMaxAction(this->test_nets_[test_net_id]->Forward(bottom_vec),
                      &max_action_ind);
         action = legal_actions[max_action_ind];
       }
@@ -916,7 +918,10 @@ void AtariSolver<Dtype>::PlayAtari() {
       leveldb::Slice key =
           dynamic_cast<std::ostringstream&>
           ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      batch.Put(key, value);
+      if (reward != 0) {
+        batch.Put(key, value);
+        LOG(INFO) << "Added experience with reward " << reward;
+      }
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -928,8 +933,8 @@ void AtariSolver<Dtype>::PlayAtari() {
   write_options.sync = true;
   leveldb::Status status = db_->Write(write_options, &batch);
 
-  LOG(INFO) << "Leaving Game Playing Phase.";
   Caffe::set_phase(Caffe::TRAIN);
+  LOG(INFO) << "Leaving Game Playing Phase.";
 }
 
 template <typename Dtype>
