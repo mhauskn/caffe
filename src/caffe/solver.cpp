@@ -803,7 +803,7 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
     // if (this->param_.test_interval() &&
     //     this->iter_ % this->param_.test_interval() == 0) {
-    //   this->PlayAtari();
+    //   this->PlayAtari(0);
     // }
 
     const bool display = this->param_.display() &&
@@ -853,7 +853,7 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
   }
   // if (this->param_.test_interval() &&
   //     this->iter_ % this->param_.test_interval() == 0) {
-  //   this->PlayAtari();
+  //   this->PlayAtari(0);
   // }
   LOG(INFO) << "Optimization Done.";
 }
