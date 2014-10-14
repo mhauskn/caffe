@@ -12,6 +12,9 @@ layers {
     width: 160
     num_actions: 18
   }
+  transform_param {
+    scale: 0.00390625
+  }
   include: { phase: TRAIN }
 }
 layers {
@@ -26,7 +29,7 @@ layers {
     width: 160
   }
   transform_param {
-  # Maybe need to scale this to match cifar resolution?
+    scale: 0.00390625
   }
   include: { phase: TEST }
 }
