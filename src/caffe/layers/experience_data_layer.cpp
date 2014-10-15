@@ -106,7 +106,7 @@ void ExperienceDataLayer<Dtype>::InternalThreadEntry() {
     iter_->Next();
     if (!iter_->Valid()) {
       // We have reached the end. Restart from the first.
-      LOG(INFO) << "Restarting data prefetching from start.";
+      DLOG(INFO) << "Restarting data prefetching from start.";
       iter_->SeekToFirst();
     }
   }

@@ -254,6 +254,8 @@ class EuclideanLossLayer : public LossLayer<Dtype> {
     return true;
   }
 
+  inline Blob<Dtype>* mutable_diff() { return &diff_; }
+
  protected:
   /// @copydoc EuclideanLossLayer
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,

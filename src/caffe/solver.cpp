@@ -11,6 +11,7 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/upgrade_proto.hpp"
 #include "caffe/data_layers.hpp"
+#include "caffe/loss_layers.hpp"
 
 #include "leveldb/write_batch.h"
 
@@ -794,6 +795,8 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
   // For a network that is trained by the solver, no bottom or top vecs
   // should be given, and we will just provide dummy vecs.
   vector<Blob<Dtype>*> bottom_vec;
+  Dtype avg_loss(0);
+  int loss_count = 0;
   for (; this->iter_ < this->param_.max_iter(); ++this->iter_) {
     // Save a snapshot if needed.
     if (this->param_.snapshot() && this->iter_ > start_iter &&
@@ -811,8 +814,13 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->net_->set_debug_info(display && this->param_.debug_info());
 
     Dtype loss = ForwardBackward(bottom_vec);
+    avg_loss += loss;
+    loss_count++;
     if (display) {
-      LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
+      LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss
+                << ", avg_loss = " << avg_loss / loss_count;
+      avg_loss = Dtype(0);
+      loss_count = 0;
       const vector<Blob<Dtype>*>& result = this->net_->output_blobs();
       int score_index = 0;
       for (int j = 0; j < result.size(); ++j) {
@@ -1006,14 +1014,109 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   Dtype gamma = 0;
   // Run the first forward pass on the next state values
   this->net_->Forward(bottom_vec);
+  // Access the output values of the network.
   const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
   // Here we assume that the last layer is a loss layer so the 2nd
   // to last layer contains the blobs of interest.
   const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
   // Compute the targets for forward-backward
   ComputeLabels(output_blobs, *actions_, *rewards_, gamma, labels_.get());
-  // Run the next forward pass on the previous state values
-  return this->net_->ForwardBackward(bottom_vec);
+  // Run the next forward pass on the previous state values. This is
+  // done automatically by the ExperienceDataLayer.
+  this->net_->Forward(bottom_vec);
+  // Get the loss layer to do special hacks on it...
+  // TODO(mhauskn): Store a pointer to the output layer to save these casts?
+  const shared_ptr<EuclideanLossLayer<Dtype> > loss_layer =
+      boost::dynamic_pointer_cast<EuclideanLossLayer<Dtype> >
+      (this->net_->layers().back());
+  CHECK(loss_layer) <<
+      "Last Layer of the Atari Test Net must be a Euclidean Loss Layer.";
+  Blob<Dtype>* diff = loss_layer->mutable_diff();
+  // Update the diff blob from the loss layer to only take the diff of
+  // the output nodes for which actions were taken.
+  ClearNonActionDiffs(*actions_, diff);
+  // Get the actual loss - Only penalize net for predictions of
+  // actions that were actually taken.
+  Dtype loss = GetEuclideanLoss(*actions_, diff);
+  // Run the backwards pass on the network and return the loss.
+  this->net_->Backward();
+  return loss;
+}
+
+template <typename Dtype>
+Dtype AtariSolver<Dtype>::GetEuclideanLoss(const vector<int>& actions,
+                                           Blob<Dtype>* diff) {
+  int num = diff->num();
+  int channels = diff->channels();
+  CHECK_EQ(num, actions.size()) << "Diff size must equal action size!";
+  CHECK_EQ(diff->height(), 1) << "Diff has height other than 1!";
+  CHECK_EQ(diff->width(), 1) << "Diff has width other than 1!";
+  for (int i = 0; i < actions.size(); ++i) {
+    CHECK_LT(actions[i], channels)
+        << "Actions[" << i << "] has value " << actions[i]
+        << " but we only have " << channels << " channels.";
+  }
+
+  Dtype loss(0);
+  if (Caffe::mode() == Caffe::GPU) {
+    Dtype tmp;
+    const Dtype* gpu_data = diff->gpu_data();
+    for (int n = 0; n < num; ++n) {
+      int chan = actions[n];
+      caffe_gpu_memcpy(sizeof(Dtype), &gpu_data[n * channels + chan], &tmp);
+      loss += tmp * tmp;
+    }
+  } else if (Caffe::mode() == Caffe::CPU) {
+    const Dtype* diff_data = diff->cpu_data();
+    for (int n = 0; n < num; ++n) {
+      int chan = actions[n];
+      Dtype tmp = diff_data[n * channels + chan];
+      loss += tmp * tmp;
+    }
+  } else {
+    LOG(FATAL) << "Unknown caffe mode.";
+  }
+
+  return loss / Dtype(2 * num);
+}
+
+template <typename Dtype>
+void AtariSolver<Dtype>::ClearNonActionDiffs(const vector<int>& actions,
+                                             Blob<Dtype>* diff) {
+  int num = diff->num();
+  int channels = diff->channels();
+  CHECK_EQ(num, actions.size()) << "Diff size must equal action size!";
+  CHECK_EQ(diff->height(), 1) << "Diff has height other than 1!";
+  CHECK_EQ(diff->width(), 1) << "Diff has width other than 1!";
+  for (int i = 0; i < actions.size(); ++i) {
+    CHECK_LT(actions[i], channels)
+        << "Actions[" << i << "] has value " << actions[i]
+        << " but we only have " << channels << " channels.";
+  }
+
+  // Zero all the diffs except those corresponding to actions.
+  if (Caffe::mode() == Caffe::GPU) {
+    Dtype* diff_data = diff->mutable_gpu_data();
+    for (int n = 0; n < num; ++n) {
+      for (int c = 0; c < channels; ++c) {
+        if (actions[n] != c) {
+          caffe_gpu_set(1, Dtype(0.), &diff_data[n * channels + c]);
+        }
+      }
+    }
+  } else if (Caffe::mode() == Caffe::CPU) {
+    Dtype* diff_data = diff->mutable_cpu_data();
+    for (int n = 0; n < num; ++n) {
+      for (int c = 0; c < channels; ++c) {
+        if (actions[n] != c) {
+          diff_data[n * channels + c] = Dtype(0);
+        }
+      }
+    }
+  } else {
+    LOG(FATAL) << "Unknown caffe mode.";
+  }
+  return;
 }
 
 template <typename Dtype>

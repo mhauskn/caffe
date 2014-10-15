@@ -159,6 +159,14 @@ class AtariSolver : public SGDSolver<Dtype> {
   // Running a ForwardBackward is a bit different since labels need
   // to be computed from the outputs of the next state values.
   virtual Dtype ForwardBackward(const vector<Blob<Dtype>*>& bottom_vec);
+  // Update the diff blob of the loss layer to only use the diffs of
+  // the labels for which actions were taken.
+  virtual void ClearNonActionDiffs(const vector<int>& actions,
+                                   Blob<Dtype>* diff);
+  // Extracts the actual Euclidean loss by not penalizing for
+  // predictions corresponding to actions that were not taken.
+  virtual Dtype GetEuclideanLoss(const vector<int>& actions,
+                                 Blob<Dtype>* diff);
   // Compute the labels from the next-state-output activations.
   virtual void ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
                              const vector<int>& actions,
