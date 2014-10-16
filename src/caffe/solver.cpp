@@ -922,6 +922,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       experience.set_action(action);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
+      DisplayExperience(experience);
       string value;
       experience.SerializeToString(&value);
       leveldb::Slice key =
@@ -974,7 +975,6 @@ template <typename Dtype>
 void AtariSolver<Dtype>::DisplayScreenFromDatum(const Datum& datum) {
   const int screen_height = datum.height();
   const int screen_width = datum.width();
-  LOG(INFO) << "height " << screen_height << " width " << screen_width;
   const int screen_bytes = screen_height * screen_width;
   const string& data = datum.data();
   cv::Mat mat(screen_height, screen_width, CV_8UC4);
@@ -994,6 +994,43 @@ void AtariSolver<Dtype>::DisplayScreenFromDatum(const Datum& datum) {
   return;
 }
 
+template <typename Dtype>
+void AtariSolver<Dtype>::DisplayExperience(const Experience& experience) {
+  const Datum& state = experience.state();
+  const Datum& new_state = experience.new_state();
+  CHECK_EQ(state.height(), new_state.height());
+  CHECK_EQ(state.width(), new_state.width());
+  CHECK_EQ(state.channels(), new_state.channels());
+  const int screen_height = state.height();
+  const int screen_width = state.width();
+  const int screen_bytes = screen_height * screen_width;
+  const int text_height = 20;
+  const int display_height = screen_height + text_height;
+  const int display_width = 2 * screen_width;
+  const string& state_data = state.data();
+  const string& new_state_data = new_state.data();
+  cv::Mat mat(display_height, display_width, CV_8UC4, cv::Scalar::all(0));
+  for (int i = 0; i < screen_height; ++i) {
+    for (int j = 0; j < display_width; ++j) {
+      const string& data = j < screen_width ? state_data : new_state_data;
+      int offset = i * screen_width + j % screen_width;
+      cv::Vec4b& rgba = mat.at<cv::Vec4b>(i, j);
+      rgba[2] = data[0 * screen_bytes + offset]; // Red Channel
+      rgba[1] = data[1 * screen_bytes + offset]; // Green Channel
+      rgba[0] = data[2 * screen_bytes + offset]; // Blue Channel
+      rgba[3] = static_cast<unsigned char>(255); // Alpha Channel
+    }
+  }
+  stringstream ss;
+  ss << "A: " << experience.action() << " R: " << experience.reward();
+  cv::Point org(0, display_height - text_height / 4);
+  putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN,
+          1, cv::Scalar::all(255));
+  cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE);
+  cv::imshow("Display window", mat);
+  cv::waitKey(0);
+  return;
+}
 
 template <typename Dtype>
 void AtariSolver<Dtype>::ReadScreenToDatum(const ALEScreen& screen,

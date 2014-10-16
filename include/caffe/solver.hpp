@@ -147,6 +147,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   // Displays the given screen.
   virtual void DisplayScreen(const ALEScreen& screen);
   virtual void DisplayScreenFromDatum(const Datum& datum);
+  virtual void DisplayExperience(const Experience& experience);
   // Converts the current game screen to a Datum containing a single
   // channel.
   virtual void ReadScreenToDatum(const ALEScreen& screen, Datum* datum);
