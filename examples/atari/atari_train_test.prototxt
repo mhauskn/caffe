@@ -7,9 +7,9 @@ layers {
   experience_param {
     source: "examples/atari/atari_train_leveldb"
     batch_size: 30
-    channels: 1
-    height: 210
-    width: 160
+    channels: 3
+    height: 105
+    width: 80
     num_actions: 18
   }
   transform_param {
@@ -24,9 +24,9 @@ layers {
   top: "label"
   memory_data_param {
     batch_size: 1
-    channels: 1
-    height: 210
-    width: 160
+    channels: 3
+    height: 105
+    width: 80
   }
   transform_param {
     scale: 0.00390625

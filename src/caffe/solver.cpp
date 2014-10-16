@@ -14,6 +14,7 @@
 #include "caffe/loss_layers.hpp"
 
 #include "leveldb/write_batch.h"
+#include <opencv2/opencv.hpp>
 
 namespace caffe {
 
@@ -804,10 +805,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       this->Snapshot();
     }
 
-    // if (this->param_.test_interval() &&
-    //     this->iter_ % this->param_.test_interval() == 0) {
-    //   this->PlayAtari(0);
-    // }
+    if (this->param_.test_interval() &&
+        this->iter_ % this->param_.test_interval() == 0) {
+      this->PlayAtari(0);
+    }
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
@@ -946,15 +947,85 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
 }
 
 template <typename Dtype>
-void AtariSolver<Dtype>::ReadScreenToDatum(const ALEScreen& screen,
-                                           Datum* datum) {
+void AtariSolver<Dtype>::DisplayScreen(const ALEScreen& screen) {
   int screen_height = screen.height();
   int screen_width = screen.width();
   unsigned char* pixels = screen.getArray();
-  datum->set_channels(1);
-  datum->set_height(screen_height);
-  datum->set_width(screen_width);
-  datum->set_data(pixels, screen_width * screen_height);
+  cv::Mat mat(screen_height, screen_width, CV_8UC4);
+  for (int i = 0; i < mat.rows; ++i) {
+    for (int j = 0; j < mat.cols; ++j) {
+      cv::Vec4b& rgba = mat.at<cv::Vec4b>(i, j);
+      int r,g,b;
+      ale_.theOSystem->p_export_screen->
+          get_rgb_from_palette(pixels[i*screen_width+j],r,g,b);
+      rgba[0] = static_cast<unsigned char>(b); // Blue Channel
+      rgba[1] = static_cast<unsigned char>(g); // Green Channel
+      rgba[2] = static_cast<unsigned char>(r); // Red Channel
+      rgba[3] = static_cast<unsigned char>(255); // Alpha Channel
+    }
+  }
+  cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE);
+  cv::imshow("Display window", mat);
+  cv::waitKey(0);
+  return;
+}
+
+template <typename Dtype>
+void AtariSolver<Dtype>::DisplayScreenFromDatum(const Datum& datum) {
+  const int screen_height = datum.height();
+  const int screen_width = datum.width();
+  LOG(INFO) << "height " << screen_height << " width " << screen_width;
+  const int screen_bytes = screen_height * screen_width;
+  const string& data = datum.data();
+  cv::Mat mat(screen_height, screen_width, CV_8UC4);
+  for (int i = 0; i < mat.rows; ++i) {
+    for (int j = 0; j < mat.cols; ++j) {
+      int offset = i * screen_width + j;
+      cv::Vec4b& rgba = mat.at<cv::Vec4b>(i, j);
+      rgba[2] = data[0 * screen_bytes + offset]; // Red Channel
+      rgba[1] = data[1 * screen_bytes + offset]; // Green Channel
+      rgba[0] = data[2 * screen_bytes + offset]; // Blue Channel
+      rgba[3] = static_cast<unsigned char>(255); // Alpha Channel
+    }
+  }
+  cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE);
+  cv::imshow("Display window", mat);
+  cv::waitKey(0);
+  return;
+}
+
+
+template <typename Dtype>
+void AtariSolver<Dtype>::ReadScreenToDatum(const ALEScreen& screen,
+                                           Datum* datum) {
+  const int screen_height = screen.height();
+  const int screen_width = screen.width();
+  unsigned char* pixels = screen.getArray();
+
+  // TODO(mhauskn): Convert screen to grayscale?
+  const int target_height = screen_height / 2;
+  const int target_width = screen_width / 2;
+  const int channels = 3;
+  const int screen_size = target_height * target_width;
+  const int screen_bytes = channels * screen_size;
+  char str_buffer[screen_bytes];
+  // Downsample Image by factor of 2
+  int r,g,b;
+  int offset;
+  for (int y = 0; y < target_height; ++y) {
+    for (int x = 0; x < target_width; ++x) {
+      ale_.theOSystem->p_export_screen->
+          get_rgb_from_palette(pixels[2*y*screen_width+2*x],r,g,b);
+      offset = y * target_width + x;
+      str_buffer[offset] = (char) r;
+      str_buffer[screen_size + offset] = (char) g;
+      str_buffer[2 * screen_size + offset] = (char) b;
+    }
+  }
+  datum->set_channels(channels);
+  datum->set_height(target_height);
+  datum->set_width(target_width);
+  datum->set_data(str_buffer, screen_bytes);
   return;
 }
 
@@ -1025,7 +1096,6 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   // done automatically by the ExperienceDataLayer.
   this->net_->Forward(bottom_vec);
   // Get the loss layer to do special hacks on it...
-  // TODO(mhauskn): Store a pointer to the output layer to save these casts?
   const shared_ptr<EuclideanLossLayer<Dtype> > loss_layer =
       boost::dynamic_pointer_cast<EuclideanLossLayer<Dtype> >
       (this->net_->layers().back());
