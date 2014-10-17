@@ -888,10 +888,11 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   Experience experience;
   leveldb::WriteBatch batch;
 
+  int experiences = 0;
   // TODO(mhauskn): anneal epsilon
   float epsilon = 1.0;
-  // TODO(mhauskn): Remove hardcoded number episodes to play
-  for (int episode = 0; episode < 100; episode++) {
+  int max_episodes = this->param_.test_iter(test_net_id);
+  for (int episode = 0; episode < max_episodes; episode++) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
@@ -922,7 +923,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       experience.set_action(action);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
-      DisplayExperience(experience);
+      // DisplayExperience(experience);
       string value;
       experience.SerializeToString(&value);
       leveldb::Slice key =
@@ -930,7 +931,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
           ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
       if (reward != 0) {
         batch.Put(key, value);
-        LOG(INFO) << "Added experience with reward " << reward;
+        experiences++;
       }
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
@@ -942,6 +943,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   leveldb::WriteOptions write_options;
   write_options.sync = true;
   leveldb::Status status = db_->Write(write_options, &batch);
+  LOG(INFO) << "Wrote " << experiences << " experiences to db.";
 
   Caffe::set_phase(Caffe::TRAIN);
   LOG(INFO) << "Leaving Game Playing Phase.";
@@ -1119,7 +1121,7 @@ template <typename Dtype>
 Dtype AtariSolver<Dtype>::ForwardBackward(
     const vector<Blob<Dtype>*>& bottom_vec) {
   // TODO(mhauskn): Remove hardcoded gamma
-  Dtype gamma = 0;
+  Dtype gamma(0);
   // Run the first forward pass on the next state values
   this->net_->Forward(bottom_vec);
   // Access the output values of the network.
@@ -1241,9 +1243,9 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   Dtype* label_data = labels->mutable_cpu_data();
   // TODO(mhauskn): Shouldn't need to zero the labels. Look into only
   // backpropping the label that get modified below.
-  for (int i = 0; i < labels->count(); ++i) {
-    label_data[i] = 0;
-  }
+  // for (int i = 0; i < labels->count(); ++i) {
+  //   label_data[i] = 0;
+  // }
 
   // Compute the max over all next-state values
   Dtype max_action_vals[batch_size];
@@ -1252,7 +1254,7 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   // Compute the gamma-discounted max over next state actions and
   // use this compute the labels.
   for (int n = 0; n < batch_size; ++n) {
-    Dtype target = rewards[n] + gamma * max_action_vals[n];
+    Dtype target(rewards[n] + gamma * max_action_vals[n]);
     int offset = labels->offset(n) + actions[n];
     label_data[offset] = target;
   }
