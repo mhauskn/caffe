@@ -762,9 +762,9 @@ template <typename Dtype>
 void AtariSolver<Dtype>::PreSolve() {
   SGDSolver<Dtype>::PreSolve();
   // Load the ROM file
-  // TOOD(mhauskn): Remove this hardcoded path. Likely refactor to solver prototext
-  // Pong is good to start with since rewards are either -1, 0, or 1
-  ale_.loadROM("/home/matthew/projects/ale-assets/roms/pong.bin");
+  ale_.loadROM(this->param_.atari_param().rom());
+  gamma_ = Dtype(this->param_.atari_param().gamma());
+  epsilon_ = Dtype(1);
 
   // Copy the leveldb pointer from the experience layer
   shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
@@ -860,22 +860,20 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->net_->Forward(bottom_vec, &loss);
     LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
   }
-  // if (this->param_.test_interval() &&
-  //     this->iter_ % this->param_.test_interval() == 0) {
-  //   this->PlayAtari(0);
-  // }
+  if (this->param_.test_interval() &&
+      this->iter_ % this->param_.test_interval() == 0) {
+    this->PlayAtari(0);
+  }
   LOG(INFO) << "Optimization Done.";
 }
 
 template <typename Dtype>
 void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
-  LOG(INFO) << "Entering Game Playing Phase.";
+  LOG(INFO) << "Entering Game Playing Phase. epsilon=" << epsilon_;
   Caffe::set_phase(Caffe::TEST);
   CHECK_NOTNULL(this->test_nets_[test_net_id].get())->
       ShareTrainedLayersWith(this->net_.get());
-
   LevelDB_DeleteAll(db_.get());
-
   ActionVect legal_actions = ale_.getLegalActionSet();
   const ALEScreen& screen = ale_.getScreen();
   vector<Datum> datum_vector(1);
@@ -887,23 +885,20 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
   Experience experience;
   leveldb::WriteBatch batch;
-
-  int experiences = 0;
-  // TODO(mhauskn): anneal epsilon
-  float epsilon = 1.0;
-  int max_episodes = this->param_.test_iter(test_net_id);
-  for (int episode = 0; episode < max_episodes; episode++) {
+  int episode = 0;
+  int experience_count = 0;
+  int max_experiences = this->param_.test_iter(test_net_id);
+  while (experience_count < max_experiences) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
-
       // Epsilon-greedy action selection
       Action action;
       float f;
       caffe_rng_uniform(1, 0.f, 1.f, &f);
-      if (f < epsilon) {
+      if (f < epsilon_) {
         action = legal_actions[caffe_rng_rand() % legal_actions.size()];
       } else {
         memory_layer->AddDatumVector(datum_vector);
@@ -912,39 +907,34 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
                      &max_action_ind);
         action = legal_actions[max_action_ind];
       }
-
       // Apply the action and get the resulting reward
       float reward = ale_.act(action);
       totalReward += reward;
       steps++;
-
       // Save the experience to the database
-      // TODO(mhauskn): Optimize by not storing duplicate states if identical
       experience.set_action(action);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
       // DisplayExperience(experience);
       string value;
       experience.SerializeToString(&value);
-      leveldb::Slice key =
-          dynamic_cast<std::ostringstream&>
+      leveldb::Slice key = dynamic_cast<std::ostringstream&>
           ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      if (reward != 0) {
-        batch.Put(key, value);
-        experiences++;
-      }
+      batch.Put(key, value);
+      experience_count++;
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
     ale_.reset_game();
+    episode++;
   }
-
+  // Anneal epsilon
+  epsilon_ = max(Dtype(0.1), epsilon_ - Dtype(experience_count / 1e6));
+  LOG(INFO) << "Writing " << experience_count << " experiences to db.";
   // Write the batch of data to the db
   leveldb::WriteOptions write_options;
   write_options.sync = true;
   leveldb::Status status = db_->Write(write_options, &batch);
-  LOG(INFO) << "Wrote " << experiences << " experiences to db.";
-
   Caffe::set_phase(Caffe::TRAIN);
   LOG(INFO) << "Leaving Game Playing Phase.";
 }
@@ -1120,8 +1110,6 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
 template <typename Dtype>
 Dtype AtariSolver<Dtype>::ForwardBackward(
     const vector<Blob<Dtype>*>& bottom_vec) {
-  // TODO(mhauskn): Remove hardcoded gamma
-  Dtype gamma(0);
   // Run the first forward pass on the next state values
   this->net_->Forward(bottom_vec);
   // Access the output values of the network.
@@ -1130,7 +1118,7 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   // to last layer contains the blobs of interest.
   const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
   // Compute the targets for forward-backward
-  ComputeLabels(output_blobs, *actions_, *rewards_, gamma, labels_.get());
+  ComputeLabels(output_blobs, *actions_, *rewards_, gamma_, labels_.get());
   // Run the next forward pass on the previous state values. This is
   // done automatically by the ExperienceDataLayer.
   this->net_->Forward(bottom_vec);

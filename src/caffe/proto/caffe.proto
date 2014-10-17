@@ -75,10 +75,18 @@ message NetParameter {
   optional NetState state = 6;
 }
 
+// A message that keeps parameters for the Atari solver
+message AtariParameter {
+  // The path to the Atari rom file
+  optional string rom = 1;
+  // Gamma discount factor
+  optional float gamma = 2 [default = .98];
+}
+
 // NOTE
 // Update the next available ID when you add a new SolverParameter field.
 //
-// SolverParameter next available ID: 33 (last added: test_initialization)
+// SolverParameter next available ID: 34 (last added: atari_param)
 message SolverParameter {
   //////////////////////////////////////////////////////////////////////////////
   // Specifying the train and test networks
@@ -105,6 +113,7 @@ message SolverParameter {
   optional NetParameter train_net_param = 21; // Inline train net params.
   repeated NetParameter test_net_param = 22; // Inline test net params.
 
+  optional AtariParameter atari_param = 33; // Atari parameters
   // The states for the train/test nets. Must be unspecified or
   // specified once per net.
   //

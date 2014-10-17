@@ -178,6 +178,8 @@ class AtariSolver : public SGDSolver<Dtype> {
                              const Dtype gamma,
                              Blob<Dtype>* labels);
 
+  Dtype epsilon_;
+  Dtype gamma_;
   ALEInterface ale_;
   shared_ptr<leveldb::DB> db_;
   shared_ptr<vector<int> > actions_;
