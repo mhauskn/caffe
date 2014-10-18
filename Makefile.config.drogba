@@ -58,7 +58,8 @@ PYTHON_LIB := /usr/lib
 
 # Whatever else you find you need goes here.
 INCLUDE_DIRS := $(PYTHON_INCLUDE) /usr/local/include Arcade-Learning-Environment/src
-LIBRARY_DIRS := $(PYTHON_LIB) /usr/local/lib /usr/lib Arcade-Learning-Environment
+LIBRARY_DIRS := $(PYTHON_LIB) /usr/local/lib /usr/lib
+LIBS := Arcade-Learning-Environment/libale.so
 
 BUILD_DIR := build
 DISTRIBUTE_DIR := distribute
