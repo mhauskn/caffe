@@ -14,6 +14,6 @@ snapshot_prefix: "examples/atari/atari_quick"
 solver_mode: GPU
 solver_type: ATARI
 atari_param {
-  rom: "/home/matthew/projects/ale-assets/roms/pong.bin"
+  rom: "roms/pong.bin"
   gamma: .98
 }
