@@ -141,6 +141,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   virtual void Solve(const char* resume_file = NULL);
 
  protected:
+  virtual void PrintBlob(string name, const Blob<Dtype>& blob, bool cpu);
   virtual void PreSolve();
   // Runs the Atari game to generate data for training
   virtual void PlayAtari(const int test_net_id);

@@ -805,10 +805,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       this->Snapshot();
     }
 
-    if (this->param_.test_interval() &&
-        this->iter_ % this->param_.test_interval() == 0) {
-      this->PlayAtari(0);
-    }
+    // if (this->param_.test_interval() &&
+    //     this->iter_ % this->param_.test_interval() == 0) {
+    //   this->PlayAtari(0);
+    // }
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
@@ -860,10 +860,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->net_->Forward(bottom_vec, &loss);
     LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
   }
-  if (this->param_.test_interval() &&
-      this->iter_ % this->param_.test_interval() == 0) {
-    this->PlayAtari(0);
-  }
+  // if (this->param_.test_interval() &&
+  //     this->iter_ % this->param_.test_interval() == 0) {
+  //   this->PlayAtari(0);
+  // }
   LOG(INFO) << "Optimization Done.";
 }
 
@@ -1066,6 +1066,7 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
   Blob<Dtype>* output_blob = output_blobs[0];
   CHECK_GE(output_blob->channels(), num_legal_actions)
       << "Output layer has fewer channels than number of legal actions.";
+  // TODO: We may need to get GPU data in the GPU case!
   const Dtype* output_data = output_blobs[0]->cpu_data();
   if (max_actions != NULL) {
     for (int n = 0; n < output_blob->num(); ++n) {
@@ -1089,7 +1090,7 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
         max_action_vals[n] = max_val;
       }
     }
-  } else {
+  } else if (max_action_vals != NULL) {
     // Quicker version to just get the maximum values
     for (int n = 0; n < output_blob->num(); ++n) {
       int start_indx = output_blob->offset(n);
@@ -1099,10 +1100,11 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
           max_val = output_data[i];
         }
       }
-      if (max_action_vals != NULL) {
-        max_action_vals[n] = max_val;
-      }
+      CHECK(!isnan(max_val));
+      max_action_vals[n] = max_val;
     }
+  } else {
+    LOG(FATAL) << "Both max_actions and max_action_vals cannot be null!";
   }
   return;
 }
@@ -1110,6 +1112,10 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
 template <typename Dtype>
 Dtype AtariSolver<Dtype>::ForwardBackward(
     const vector<Blob<Dtype>*>& bottom_vec) {
+  // Make a copy of the actions & rewards so the don't change under us
+  vector<int> actions(*actions_);
+  vector<float> rewards(*rewards_);
+
   // Run the first forward pass on the next state values
   this->net_->Forward(bottom_vec);
   // Access the output values of the network.
@@ -1118,7 +1124,7 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   // to last layer contains the blobs of interest.
   const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
   // Compute the targets for forward-backward
-  ComputeLabels(output_blobs, *actions_, *rewards_, gamma_, labels_.get());
+  ComputeLabels(output_blobs, actions, rewards, gamma_, labels_.get());
   // Run the next forward pass on the previous state values. This is
   // done automatically by the ExperienceDataLayer.
   this->net_->Forward(bottom_vec);
@@ -1131,13 +1137,43 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   Blob<Dtype>* diff = loss_layer->mutable_diff();
   // Update the diff blob from the loss layer to only take the diff of
   // the output nodes for which actions were taken.
-  ClearNonActionDiffs(*actions_, diff);
+  ClearNonActionDiffs(actions, diff);
   // Get the actual loss - Only penalize net for predictions of
   // actions that were actually taken.
-  Dtype loss = GetEuclideanLoss(*actions_, diff);
+  Dtype loss = GetEuclideanLoss(actions, diff);
   // Run the backwards pass on the network and return the loss.
   this->net_->Backward();
   return loss;
+}
+
+template <typename Dtype>
+void AtariSolver<Dtype>::PrintBlob(string name, const Blob<Dtype>& blob,
+                                   bool cpu) {
+  cout << "Blob: " << name
+       << " num=" << blob.num()
+       << " channels=" << blob.channels()
+       << " height=" << blob.height()
+       << " width=" << blob.width()
+       << " count=" << blob.count()
+       << endl;
+  Dtype print_data[blob.count()];
+  const Dtype* data;
+  if (cpu) {
+    data = blob.cpu_data();
+  } else {
+    const Dtype* gpu_data = blob.gpu_data();
+    caffe_gpu_memcpy(sizeof(Dtype)*blob.count(), gpu_data, &print_data);
+    data = print_data;
+  }
+  for (int n = 0; n < blob.num(); ++n) {
+    cout.precision(2);
+    cout << "n=" << n << " ";
+    int start_indx = blob.offset(n);
+    for (int i = start_indx; i < start_indx + blob.channels(); ++i) {
+      cout << data[i] << " ";
+    }
+    cout << endl;
+  }
 }
 
 template <typename Dtype>
@@ -1158,6 +1194,7 @@ Dtype AtariSolver<Dtype>::GetEuclideanLoss(const vector<int>& actions,
   if (Caffe::mode() == Caffe::GPU) {
     Dtype tmp;
     const Dtype* gpu_data = diff->gpu_data();
+    // PrintBlob("Diff", *diff, false);
     for (int n = 0; n < num; ++n) {
       int chan = actions[n];
       caffe_gpu_memcpy(sizeof(Dtype), &gpu_data[n * channels + chan], &tmp);
@@ -1222,6 +1259,7 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
                                        const vector<float>& rewards,
                                        const Dtype gamma,
                                        Blob<Dtype>* labels) {
+  // PrintBlob("Output", *output_blobs[0], false);
   int batch_size = output_blobs[0]->num();
   CHECK_EQ(labels->count(), output_blobs[0]->count())
       << "Labels count does not equal output_blobs[0] count.";
@@ -1231,9 +1269,9 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   Dtype* label_data = labels->mutable_cpu_data();
   // TODO(mhauskn): Shouldn't need to zero the labels. Look into only
   // backpropping the label that get modified below.
-  // for (int i = 0; i < labels->count(); ++i) {
-  //   label_data[i] = 0;
-  // }
+  for (int i = 0; i < labels->count(); ++i) {
+    label_data[i] = Dtype(0);
+  }
 
   // Compute the max over all next-state values
   Dtype max_action_vals[batch_size];
