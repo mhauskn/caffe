@@ -765,6 +765,7 @@ void AtariSolver<Dtype>::PreSolve() {
   ale_.loadROM(this->param_.atari_param().rom());
   gamma_ = Dtype(this->param_.atari_param().gamma());
   epsilon_ = Dtype(1);
+  LOG(INFO) << "Minimum Action Set Size: " << ale_.getMinimalActionSet().size();
 
   // Copy the leveldb pointer from the experience layer
   shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
@@ -805,10 +806,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       this->Snapshot();
     }
 
-    // if (this->param_.test_interval() &&
-    //     this->iter_ % this->param_.test_interval() == 0) {
-    //   this->PlayAtari(0);
-    // }
+    if (this->param_.test_interval() &&
+        this->iter_ % this->param_.test_interval() == 0) {
+      this->PlayAtari(0);
+    }
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
@@ -874,7 +875,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   CHECK_NOTNULL(this->test_nets_[test_net_id].get())->
       ShareTrainedLayersWith(this->net_.get());
   LevelDB_DeleteAll(db_.get());
-  ActionVect legal_actions = ale_.getLegalActionSet();
+  ActionVect legal_actions = ale_.getMinimalActionSet();
   const ALEScreen& screen = ale_.getScreen();
   vector<Datum> datum_vector(1);
   vector<Blob<Dtype>*> bottom_vec;
@@ -895,24 +896,22 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
       // Epsilon-greedy action selection
-      Action action;
+      Action action_index;
       float f;
       caffe_rng_uniform(1, 0.f, 1.f, &f);
       if (f < epsilon_) {
-        action = legal_actions[caffe_rng_rand() % legal_actions.size()];
+        action_index = Action(caffe_rng_rand() % legal_actions.size());
       } else {
         memory_layer->AddDatumVector(datum_vector);
-        Action max_action_ind;
         GetMaxAction(this->test_nets_[test_net_id]->Forward(bottom_vec),
-                     &max_action_ind);
-        action = legal_actions[max_action_ind];
+                     &action_index);
       }
       // Apply the action and get the resulting reward
-      float reward = ale_.act(action);
+      float reward = ale_.act(legal_actions[action_index]);
       totalReward += reward;
       steps++;
       // Save the experience to the database
-      experience.set_action(action);
+      experience.set_action(action_index);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
       // DisplayExperience(experience);
@@ -1062,7 +1061,7 @@ template <typename Dtype>
 void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
                                       Action* max_actions,
                                       Dtype* max_action_vals) {
-  int num_legal_actions = ale_.getLegalActionSet().size();
+  int num_legal_actions = ale_.getMinimalActionSet().size();
   Blob<Dtype>* output_blob = output_blobs[0];
   CHECK_GE(output_blob->channels(), num_legal_actions)
       << "Output layer has fewer channels than number of legal actions.";
@@ -1224,7 +1223,7 @@ void AtariSolver<Dtype>::ClearNonActionDiffs(const vector<int>& actions,
   CHECK_EQ(diff->width(), 1) << "Diff has width other than 1!";
   for (int i = 0; i < actions.size(); ++i) {
     CHECK_LT(actions[i], channels)
-        << "Actions[" << i << "] has value " << actions[i]
+        << "actions[" << i << "] has value " << actions[i]
         << " but we only have " << channels << " channels.";
   }
 
