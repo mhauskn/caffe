@@ -49,7 +49,7 @@ layers {
     stride: 1
     weight_filler {
       type: "gaussian"
-      std: 0.01
+      std: 0.0001
     }
     bias_filler {
       type: "constant"
@@ -146,7 +146,7 @@ layers {
     num_output: 64
     weight_filler {
       type: "gaussian"
-      std: 0.005
+      std: 0.1
     }
     bias_filler {
       type: "constant"
@@ -166,7 +166,7 @@ layers {
     num_output: 6
     weight_filler {
       type: "gaussian"
-      std: 0.005
+      std: 0.1
     }
     bias_filler {
       type: "constant"
