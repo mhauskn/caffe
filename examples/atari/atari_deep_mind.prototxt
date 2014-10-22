@@ -1,0 +1,129 @@
+name: "Atari_quick"
+layers {
+  name: "atari-data"
+  type: EXPERIENCE_DATA
+  top: "data"
+  top: "label"
+  experience_param {
+    source: "examples/atari/atari_train_leveldb"
+    batch_size: 64
+    channels: 3
+    height: 105
+    width: 80
+    num_actions: 6
+  }
+  transform_param {
+    scale: 0.00390625
+  }
+  include: { phase: TRAIN }
+}
+layers {
+  name: "atari-memory"
+  type: MEMORY_DATA
+  top: "data"
+  top: "label"
+  memory_data_param {
+    batch_size: 1
+    channels: 3
+    height: 105
+    width: 80
+  }
+  transform_param {
+    scale: 0.00390625
+  }
+  include: { phase: TEST }
+}
+layers {
+  name: "conv1"
+  type: CONVOLUTION
+  bottom: "data"
+  top: "conv1"
+  blobs_lr: 1
+  blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
+  convolution_param {
+    num_output: 16
+    pad: 2
+    kernel_size: 8
+    stride: 4
+    weight_filler {
+      type: "gaussian"
+      std: 0.0001
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layers {
+  name: "conv2"
+  type: CONVOLUTION
+  bottom: "conv1"
+  top: "conv2"
+  blobs_lr: 1
+  blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
+  convolution_param {
+    num_output: 32
+    pad: 2
+    kernel_size: 4
+    stride: 2
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layers {
+  name: "ip1"
+  type: INNER_PRODUCT
+  bottom: "conv2"
+  top: "ip1"
+  blobs_lr: 1
+  blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
+  inner_product_param {
+    num_output: 256
+    weight_filler {
+      type: "gaussian"
+      std: 0.1
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layers {
+  name: "ip2"
+  type: INNER_PRODUCT
+  bottom: "ip1"
+  top: "ip2"
+  blobs_lr: 1
+  blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
+  inner_product_param {
+    num_output: 6
+    weight_filler {
+      type: "gaussian"
+      std: 0.1
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layers {
+  name: "loss"
+  type: EUCLIDEAN_LOSS
+  bottom: "ip2"
+  bottom: "label"
+  top: "loss"
+  include: { phase: TRAIN }
+}
