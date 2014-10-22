@@ -1,13 +1,13 @@
 net: "examples/atari/atari_train_test.prototxt"
 # Number of experiences to put into db per PlayAtari
-test_iter: 10000
+test_iter: 128
 test_interval: 1000
 base_lr: 0.001
 gamma: 0.999
 momentum: 0.9
 weight_decay: 0.004
 lr_policy: "fixed"
-display: 100
+display: 20
 max_iter: 100000
 snapshot: 10000
 snapshot_prefix: "examples/atari/atari_quick"
@@ -15,5 +15,5 @@ solver_mode: GPU
 solver_type: ATARI
 atari_param {
   rom: "roms/pong.bin"
-  gamma: .98
+  gamma: 0
 }

@@ -806,10 +806,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       this->Snapshot();
     }
 
-    if (this->param_.test_interval() &&
-        this->iter_ % this->param_.test_interval() == 0) {
-      this->PlayAtari(0);
-    }
+    // if (this->param_.test_interval() &&
+    //     this->iter_ % this->param_.test_interval() == 0) {
+    //   this->PlayAtari(0);
+    // }
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
@@ -884,6 +884,8 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       (this->test_nets_[test_net_id]->layers()[0]);
   CHECK(memory_layer) <<
       "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
+  int pos_tuples = 0;
+  int neg_tuples = 0;
   Experience experience;
   leveldb::WriteBatch batch;
   int episode = 0;
@@ -915,12 +917,15 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
       // DisplayExperience(experience);
-      string value;
-      experience.SerializeToString(&value);
-      leveldb::Slice key = dynamic_cast<std::ostringstream&>
-          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      batch.Put(key, value);
-      experience_count++;
+      if ((reward > 0 && pos_tuples++ < 64) ||
+          (reward < 0 && neg_tuples++ < 64)) {
+        string value;
+        experience.SerializeToString(&value);
+        leveldb::Slice key = dynamic_cast<std::ostringstream&>
+            ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+        batch.Put(key, value);
+        experience_count++;
+      }
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -1283,6 +1288,7 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
     int offset = labels->offset(n) + actions[n];
     label_data[offset] = target;
   }
+  // PrintBlob("Labels", *labels, true);
   return;
 }
 

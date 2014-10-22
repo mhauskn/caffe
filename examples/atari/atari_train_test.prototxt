@@ -6,11 +6,11 @@ layers {
   top: "label"
   experience_param {
     source: "examples/atari/atari_train_leveldb"
-    batch_size: 32
+    batch_size: 64
     channels: 3
     height: 105
     width: 80
-    num_actions: 18
+    num_actions: 6
   }
   transform_param {
     scale: 0.00390625
@@ -40,6 +40,8 @@ layers {
   top: "conv1"
   blobs_lr: 1
   blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
   convolution_param {
     num_output: 32
     pad: 2
@@ -47,7 +49,7 @@ layers {
     stride: 1
     weight_filler {
       type: "gaussian"
-      std: 0.0001
+      std: 0.01
     }
     bias_filler {
       type: "constant"
@@ -66,18 +68,14 @@ layers {
   }
 }
 layers {
-  name: "relu1"
-  type: RELU
-  bottom: "pool1"
-  top: "pool1"
-}
-layers {
   name: "conv2"
   type: CONVOLUTION
   bottom: "pool1"
   top: "conv2"
   blobs_lr: 1
   blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
   convolution_param {
     num_output: 32
     pad: 2
@@ -91,12 +89,6 @@ layers {
       type: "constant"
     }
   }
-}
-layers {
-  name: "relu2"
-  type: RELU
-  bottom: "conv2"
-  top: "conv2"
 }
 layers {
   name: "pool2"
@@ -131,12 +123,6 @@ layers {
   }
 }
 layers {
-  name: "relu3"
-  type: RELU
-  bottom: "conv3"
-  top: "conv3"
-}
-layers {
   name: "pool3"
   type: POOLING
   bottom: "conv3"
@@ -154,11 +140,13 @@ layers {
   top: "ip1"
   blobs_lr: 1
   blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
   inner_product_param {
     num_output: 64
     weight_filler {
       type: "gaussian"
-      std: 0.1
+      std: 0.005
     }
     bias_filler {
       type: "constant"
@@ -172,18 +160,19 @@ layers {
   top: "ip2"
   blobs_lr: 1
   blobs_lr: 2
+  weight_decay: 1
+  weight_decay: 0
   inner_product_param {
-    num_output: 18
+    num_output: 6
     weight_filler {
       type: "gaussian"
-      std: 0.1
+      std: 0.005
     }
     bias_filler {
       type: "constant"
     }
   }
 }
-# Consider also the CrossEntropyLossLayer
 layers {
   name: "loss"
   type: EUCLIDEAN_LOSS
