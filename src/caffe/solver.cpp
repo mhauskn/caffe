@@ -824,25 +824,6 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
                 << ", avg_loss = " << avg_loss / loss_count;
       avg_loss = Dtype(0);
       loss_count = 0;
-      const vector<Blob<Dtype>*>& result = this->net_->output_blobs();
-      int score_index = 0;
-      for (int j = 0; j < result.size(); ++j) {
-        const Dtype* result_vec = result[j]->cpu_data();
-        const string& output_name =
-            this->net_->blob_names()[this->net_->output_blob_indices()[j]];
-        const Dtype loss_weight = this->net_->blob_loss_weights()
-                                  [this->net_->output_blob_indices()[j]];
-        for (int k = 0; k < result[j]->count(); ++k) {
-          ostringstream loss_msg_stream;
-          if (loss_weight) {
-            loss_msg_stream << " (* " << loss_weight
-                            << " = " << loss_weight * result_vec[k] << " loss)";
-          }
-          LOG(INFO) << "    Train net output #"
-              << score_index++ << ": " << output_name << " = "
-              << result_vec[k] << loss_msg_stream.str();
-        }
-      }
     }
 
     this->ComputeUpdateValue();
