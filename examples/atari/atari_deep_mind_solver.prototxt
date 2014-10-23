@@ -7,7 +7,7 @@ gamma: 0.999
 momentum: 0.9
 weight_decay: 0.004
 lr_policy: "fixed"
-display: 20
+display: 100
 max_iter: 100000
 snapshot: 10000
 snapshot_prefix: "examples/atari/atari_dm"

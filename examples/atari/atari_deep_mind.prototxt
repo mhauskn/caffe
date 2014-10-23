@@ -6,7 +6,7 @@ layers {
   top: "label"
   experience_param {
     source: "examples/atari/atari_train_leveldb"
-    batch_size: 64
+    batch_size: 128
     channels: 3
     height: 105
     width: 80

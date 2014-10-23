@@ -1199,11 +1199,15 @@ Dtype AtariSolver<Dtype>::GetEuclideanLoss(const vector<int>& actions,
     Dtype tmp;
     const Dtype* gpu_data = diff->gpu_data();
     // PrintBlob("Diff", *diff, false);
+    // cout << "Diff: ";
+    // setprecision(3);
     for (int n = 0; n < num; ++n) {
       int chan = actions[n];
       caffe_gpu_memcpy(sizeof(Dtype), &gpu_data[n * channels + chan], &tmp);
+      // cout << tmp << " ";
       loss += tmp * tmp;
     }
+    // cout << endl;
   } else if (Caffe::mode() == Caffe::CPU) {
     const Dtype* diff_data = diff->cpu_data();
     for (int n = 0; n < num; ++n) {
@@ -1273,9 +1277,9 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   Dtype* label_data = labels->mutable_cpu_data();
   // TODO(mhauskn): Shouldn't need to zero the labels. Look into only
   // backpropping the label that get modified below.
-  for (int i = 0; i < labels->count(); ++i) {
-    label_data[i] = Dtype(0);
-  }
+  // for (int i = 0; i < labels->count(); ++i) {
+  //   label_data[i] = Dtype(0);
+  // }
 
   // Compute the max over all next-state values
   Dtype max_action_vals[batch_size];
