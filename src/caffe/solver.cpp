@@ -1268,11 +1268,9 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
     Dtype reward(rewards[n]);
     if (rescale_reward_) {
       if (reward > 0) {
-        reward = Dtype(1);
+        reward = Dtype(1.0);
       } else if (reward < 0) {
-        reward = Dtype(0);
-      } else {
-        reward = Dtype(0.5);
+        reward = Dtype(-1.0);
       }
     }
     Dtype target(reward + gamma * max_action_vals[n]);
