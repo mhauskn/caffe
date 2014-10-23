@@ -10,7 +10,7 @@ layers {
     channels: 3
     height: 105
     width: 80
-    num_actions: 6
+    num_actions: 18
   }
   transform_param {
     scale: 0.00390625
@@ -127,7 +127,7 @@ layers {
   weight_decay: 1
   weight_decay: 0
   inner_product_param {
-    num_output: 6
+    num_output: 18
     weight_filler {
       type: "gaussian"
       std: 0.1

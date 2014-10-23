@@ -1,7 +1,7 @@
 net: "examples/atari/atari_deep_mind.prototxt"
 # Number of experiences to put into db per PlayAtari
-test_iter: 128
-test_interval: 1000
+test_iter: 10000
+test_interval: 1000000
 base_lr: 0.01
 gamma: 0.999
 momentum: 0.9

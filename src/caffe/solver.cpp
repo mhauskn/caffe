@@ -807,10 +807,10 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
       this->Snapshot();
     }
 
-    // if (this->param_.test_interval() &&
-    //     this->iter_ % this->param_.test_interval() == 0) {
-    //   this->PlayAtari(0);
-    // }
+    if (this->param_.test_interval() &&
+        this->iter_ % this->param_.test_interval() == 0) {
+      this->PlayAtari(0);
+    }
 
     const bool display = this->param_.display() &&
         this->iter_ % this->param_.display() == 0;
@@ -857,7 +857,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   CHECK_NOTNULL(this->test_nets_[test_net_id].get())->
       ShareTrainedLayersWith(this->net_.get());
   LevelDB_DeleteAll(db_.get());
-  ActionVect legal_actions = ale_.getMinimalActionSet();
+  ActionVect legal_actions = ale_.getLegalActionSet();
   const ALEScreen& screen = ale_.getScreen();
   vector<Datum> datum_vector(1);
   vector<Blob<Dtype>*> bottom_vec;
@@ -866,8 +866,6 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       (this->test_nets_[test_net_id]->layers()[0]);
   CHECK(memory_layer) <<
       "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
-  int pos_tuples = 0;
-  int neg_tuples = 0;
   Experience experience;
   leveldb::WriteBatch batch;
   int episode = 0;
@@ -899,15 +897,12 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
       // DisplayExperience(experience);
-      if ((reward > 0 && pos_tuples++ < 64) ||
-          (reward < 0 && neg_tuples++ < 64)) {
-        string value;
-        experience.SerializeToString(&value);
-        leveldb::Slice key = dynamic_cast<std::ostringstream&>
-            ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-        batch.Put(key, value);
-        experience_count++;
-      }
+      string value;
+      experience.SerializeToString(&value);
+      leveldb::Slice key = dynamic_cast<std::ostringstream&>
+          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+      batch.Put(key, value);
+      experience_count++;
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -1048,7 +1043,7 @@ template <typename Dtype>
 void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
                                       Action* max_actions,
                                       Dtype* max_action_vals) {
-  int num_legal_actions = ale_.getMinimalActionSet().size();
+  int num_legal_actions = ale_.getLegalActionSet().size();
   Blob<Dtype>* output_blob = output_blobs[0];
   CHECK_GE(output_blob->channels(), num_legal_actions)
       << "Output layer has fewer channels than number of legal actions.";
