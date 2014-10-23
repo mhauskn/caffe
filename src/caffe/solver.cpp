@@ -765,6 +765,7 @@ void AtariSolver<Dtype>::PreSolve() {
   ale_.loadROM(this->param_.atari_param().rom());
   gamma_ = Dtype(this->param_.atari_param().gamma());
   epsilon_ = Dtype(1);
+  rescale_reward_ = this->param_.atari_param().rescale_reward();
   LOG(INFO) << "Minimum Action Set Size: " << ale_.getMinimalActionSet().size();
 
   // Copy the leveldb pointer from the experience layer
@@ -1288,7 +1289,17 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   // Compute the gamma-discounted max over next state actions and
   // use this compute the labels.
   for (int n = 0; n < batch_size; ++n) {
-    Dtype target(rewards[n] + gamma * max_action_vals[n]);
+    Dtype reward(rewards[n]);
+    if (rescale_reward_) {
+      if (reward > 0) {
+        reward = Dtype(1);
+      } else if (reward < 0) {
+        reward = Dtype(0);
+      } else {
+        reward = Dtype(0.5);
+      }
+    }
+    Dtype target(reward + gamma * max_action_vals[n]);
     int offset = labels->offset(n) + actions[n];
     label_data[offset] = target;
   }

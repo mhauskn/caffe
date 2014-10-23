@@ -81,6 +81,8 @@ message AtariParameter {
   optional string rom = 1;
   // Gamma discount factor
   optional float gamma = 2 [default = .98];
+  // Rescale rewards to [0,1]
+  optional bool rescale_reward = 3 [default = false];
 }
 
 // NOTE

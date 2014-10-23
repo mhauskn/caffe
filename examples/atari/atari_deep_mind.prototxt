@@ -57,6 +57,12 @@ layers {
   }
 }
 layers {
+  name: "relu1"
+  type: RELU
+  bottom: "conv1"
+  top: "conv1"
+}
+layers {
   name: "conv2"
   type: CONVOLUTION
   bottom: "conv1"
@@ -80,6 +86,12 @@ layers {
   }
 }
 layers {
+  name: "relu2"
+  type: RELU
+  bottom: "conv2"
+  top: "conv2"
+}
+layers {
   name: "ip1"
   type: INNER_PRODUCT
   bottom: "conv2"
@@ -98,6 +110,12 @@ layers {
       type: "constant"
     }
   }
+}
+layers {
+  name: "relu3"
+  type: RELU
+  bottom: "ip1"
+  top: "ip1"
 }
 layers {
   name: "ip2"

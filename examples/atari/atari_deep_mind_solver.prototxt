@@ -16,4 +16,5 @@ solver_type: ATARI
 atari_param {
   rom: "roms/pong.bin"
   gamma: 0
+  rescale_reward: true
 }
