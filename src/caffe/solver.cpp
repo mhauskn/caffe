@@ -856,6 +856,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   Caffe::set_phase(Caffe::TEST);
   CHECK_NOTNULL(this->test_nets_[test_net_id].get())->
       ShareTrainedLayersWith(this->net_.get());
+  Net<Dtype>* test_net = this->test_nets_[test_net_id].get();
   LevelDB_DeleteAll(db_.get());
   ActionVect legal_actions = ale_.getLegalActionSet();
   const ALEScreen& screen = ale_.getScreen();
@@ -871,24 +872,21 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   int episode = 0;
   int experience_count = 0;
   int max_experiences = this->param_.test_iter(test_net_id);
+  Action action_index;
+  float f;
   while (experience_count < max_experiences) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
-      // Epsilon-greedy action selection
-      Action action_index;
-      float f;
       caffe_rng_uniform(1, 0.f, 1.f, &f);
       if (f < epsilon_) {
         action_index = Action(caffe_rng_rand() % legal_actions.size());
       } else {
         memory_layer->AddDatumVector(datum_vector);
-        GetMaxAction(this->test_nets_[test_net_id]->Forward(bottom_vec),
-                     &action_index);
+        GetMaxAction(test_net->Forward(bottom_vec), &action_index);
       }
-      // Apply the action and get the resulting reward
       float reward = ale_.act(legal_actions[action_index]);
       totalReward += reward;
       steps++;
@@ -896,7 +894,11 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       experience.set_action(action_index);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
-      // DisplayExperience(experience);
+      {  // Display the network's predictions
+        memory_layer->AddDatumVector(datum_vector);
+        const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
+        DisplayExperience(experience, *output[0]);
+      }
       string value;
       experience.SerializeToString(&value);
       leveldb::Slice key = dynamic_cast<std::ostringstream&>
@@ -968,7 +970,8 @@ void AtariSolver<Dtype>::DisplayScreenFromDatum(const Datum& datum) {
 }
 
 template <typename Dtype>
-void AtariSolver<Dtype>::DisplayExperience(const Experience& experience) {
+void AtariSolver<Dtype>::DisplayExperience(const Experience& experience,
+                                           const Blob<Dtype>& activations) {
   const Datum& state = experience.state();
   const Datum& new_state = experience.new_state();
   CHECK_EQ(state.height(), new_state.height());
@@ -977,12 +980,12 @@ void AtariSolver<Dtype>::DisplayExperience(const Experience& experience) {
   const int screen_height = state.height();
   const int screen_width = state.width();
   const int screen_bytes = screen_height * screen_width;
-  const int text_height = 20;
+  const int text_height = 100;
   const int display_height = screen_height + text_height;
   const int display_width = 2 * screen_width;
   const string& state_data = state.data();
   const string& new_state_data = new_state.data();
-  cv::Mat mat(display_height, display_width, CV_8UC4, cv::Scalar::all(0));
+  cv::Mat mat(display_height, max(display_width, 400), CV_8UC4, cv::Scalar::all(0));
   for (int i = 0; i < screen_height; ++i) {
     for (int j = 0; j < display_width; ++j) {
       const string& data = j < screen_width ? state_data : new_state_data;
@@ -994,11 +997,40 @@ void AtariSolver<Dtype>::DisplayExperience(const Experience& experience) {
       rgba[3] = static_cast<unsigned char>(255); // Alpha Channel
     }
   }
+  int offset = 15;
   stringstream ss;
   ss << "A: " << experience.action() << " R: " << experience.reward();
-  cv::Point org(0, display_height - text_height / 4);
-  putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN,
-          1, cv::Scalar::all(255));
+  cv::Point org(0, screen_height + offset);
+  putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
+  offset += 15;
+
+  ss.precision(3);
+  Dtype print_data[activations.count()];
+  caffe_gpu_memcpy(sizeof(Dtype)*activations.count(),
+                   activations.gpu_data(), &print_data);
+  Dtype max = print_data[0];
+  int n = 0;
+  while (n < activations.count()) {
+    ss.str("");
+    for (int i = 0; i < 5; ++i) {
+      if (n >= activations.count()) {
+        break;
+      }
+      if (print_data[n] > max) {
+        max = print_data[n];
+      }
+      ss << std::fixed << print_data[n++] << " ";
+    }
+    org = cv::Point(0, screen_height + offset);
+    offset += 15;
+    putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
+  }
+  ss.str("");
+  ss << "Max Val: " << std::scientific << max;
+  org = cv::Point(0, screen_height + offset);
+  putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
+  offset += 15;
+
   cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE);
   cv::imshow("Display window", mat);
   cv::waitKey(0);
@@ -1252,11 +1284,6 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   CHECK_EQ(batch_size, actions.size()) << "Output size must equal action size!";
 
   Dtype* label_data = labels->mutable_cpu_data();
-  // TODO(mhauskn): Shouldn't need to zero the labels. Look into only
-  // backpropping the label that get modified below.
-  // for (int i = 0; i < labels->count(); ++i) {
-  //   label_data[i] = Dtype(0);
-  // }
 
   // Compute the max over all next-state values
   Dtype max_action_vals[batch_size];
