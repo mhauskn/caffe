@@ -1,0 +1,13 @@
+net: "examples/atari/atari_reward.prototxt"
+test_iter: 100
+test_interval: 500
+base_lr: 0.001
+gamma: 0.999
+momentum: 0.9
+weight_decay: 0.004
+lr_policy: "fixed"
+display: 100
+max_iter: 10000
+snapshot: 1000
+snapshot_prefix: "examples/atari/atari_reward"
+solver_mode: GPU

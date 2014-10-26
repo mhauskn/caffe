@@ -874,12 +874,16 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   int max_experiences = this->param_.test_iter(test_net_id);
   Action action_index;
   float f;
+  Datum d;
+  int pos_saved = 0;
+  int neg_saved = 0;
   while (experience_count < max_experiences) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
+      ReadScreenToDatum(screen, &d);
       caffe_rng_uniform(1, 0.f, 1.f, &f);
       if (f < epsilon_) {
         action_index = Action(caffe_rng_rand() % legal_actions.size());
@@ -888,23 +892,49 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
         GetMaxAction(test_net->Forward(bottom_vec), &action_index);
       }
       float reward = ale_.act(legal_actions[action_index]);
+      if (reward != Dtype(0)) {
+        LOG(INFO) << "Reward " << reward;
+      }
       totalReward += reward;
       steps++;
-      // Save the experience to the database
-      experience.set_action(action_index);
-      experience.set_reward(reward);
-      ReadScreenToDatum(screen, experience.mutable_new_state());
-      {  // Display the network's predictions
-        memory_layer->AddDatumVector(datum_vector);
-        const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
-        DisplayExperience(experience, *output[0]);
+
+      // Save as a datum
+      int label = 0;
+      if (reward > 0) {
+        label = 2;
+        pos_saved++;
+      } else if (reward < 0) {
+        label = 1;
+        neg_saved++;
       }
-      string value;
-      experience.SerializeToString(&value);
-      leveldb::Slice key = dynamic_cast<std::ostringstream&>
-          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      batch.Put(key, value);
-      experience_count++;
+      d.set_label(label);
+      if (label == 0 && f > .01) {
+        ; // Skip
+      } else {
+        string value;
+        d.SerializeToString(&value);
+        leveldb::Slice key = dynamic_cast<std::ostringstream&>
+            ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+        batch.Put(key, value);
+        experience_count++;
+      }
+
+      // Save the experience to the database
+      // TODO: Change this back after testing!!!!
+      // experience.set_action(0);
+      // experience.set_reward(reward);
+      // ReadScreenToDatum(screen, experience.mutable_new_state());
+      // {  // Display the network's predictions
+      //   memory_layer->AddDatumVector(datum_vector);
+      //   const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
+      //   DisplayExperience(experience, *output[0]);
+      // }
+      // string value;
+      // experience.SerializeToString(&value);
+      // leveldb::Slice key = dynamic_cast<std::ostringstream&>
+      //     ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+      // batch.Put(key, value);
+      // experience_count++;
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -914,12 +944,14 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   // Anneal epsilon
   epsilon_ = max(Dtype(0.1), epsilon_ - Dtype(experience_count / 1e6));
   LOG(INFO) << "Writing " << experience_count << " experiences to db.";
+  LOG(INFO) << "Pos_Saved " << pos_saved << " Neg_Saved " << neg_saved;
   // Write the batch of data to the db
   leveldb::WriteOptions write_options;
   write_options.sync = true;
   leveldb::Status status = db_->Write(write_options, &batch);
   Caffe::set_phase(Caffe::TRAIN);
   LOG(INFO) << "Leaving Game Playing Phase.";
+  exit(0);
 }
 
 template <typename Dtype>
@@ -1207,7 +1239,7 @@ Dtype AtariSolver<Dtype>::GetEuclideanLoss(const vector<int>& actions,
   if (Caffe::mode() == Caffe::GPU) {
     Dtype tmp;
     const Dtype* gpu_data = diff->gpu_data();
-    // PrintBlob("Diff", *diff, false);
+    PrintBlob("Diff", *diff, false);
     // cout << "Diff: ";
     // setprecision(3);
     for (int n = 0; n < num; ++n) {
@@ -1276,7 +1308,8 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
                                        const vector<float>& rewards,
                                        const Dtype gamma,
                                        Blob<Dtype>* labels) {
-  // PrintBlob("Output", *output_blobs[0], false);
+  // LOG(INFO) << "First Forward Pass Output:";
+  PrintBlob("Output", *output_blobs[0], false);
   int batch_size = output_blobs[0]->num();
   CHECK_EQ(labels->count(), output_blobs[0]->count())
       << "Labels count does not equal output_blobs[0] count.";
@@ -1286,8 +1319,8 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   Dtype* label_data = labels->mutable_cpu_data();
 
   // Compute the max over all next-state values
-  Dtype max_action_vals[batch_size];
-  GetMaxAction(output_blobs, NULL, max_action_vals);
+  // Dtype max_action_vals[batch_size];
+  // GetMaxAction(output_blobs, NULL, max_action_vals);
 
   // Compute the gamma-discounted max over next state actions and
   // use this compute the labels.
@@ -1300,11 +1333,11 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
         reward = Dtype(-1.0);
       }
     }
-    Dtype target(reward + gamma * max_action_vals[n]);
+    Dtype target(reward); // + gamma * max_action_vals[n]);
     int offset = labels->offset(n) + actions[n];
     label_data[offset] = target;
   }
-  // PrintBlob("Labels", *labels, true);
+  PrintBlob("Labels", *labels, true);
   return;
 }
 
