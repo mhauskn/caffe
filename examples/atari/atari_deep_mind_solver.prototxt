@@ -14,7 +14,7 @@ snapshot_prefix: "examples/atari/atari_dm"
 solver_mode: GPU
 solver_type: ATARI
 atari_param {
-  rom: "roms/pong.bin"
+  rom: "roms/boxing.bin"
   gamma: 0
   rescale_reward: true
 }

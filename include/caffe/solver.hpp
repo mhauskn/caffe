@@ -149,7 +149,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   virtual void DisplayScreen(const ALEScreen& screen);
   virtual void DisplayScreenFromDatum(const Datum& datum);
   virtual void DisplayExperience(const Experience& experience,
-                                 const Blob<Dtype>& activations);
+                                 const Blob<Dtype>* activations);
   // Converts the current game screen to a Datum containing a single
   // channel.
   virtual void ReadScreenToDatum(const ALEScreen& screen, Datum* datum);
@@ -188,6 +188,10 @@ class AtariSolver : public SGDSolver<Dtype> {
   shared_ptr<vector<int> > actions_;
   shared_ptr<vector<float> > rewards_;
   shared_ptr<Blob<Dtype> > labels_;
+  // Channels/Height/Width that screen should be reshaped to.
+  int target_channels_;
+  int target_width_;
+  int target_height_;
 
   DISABLE_COPY_AND_ASSIGN(AtariSolver);
 };

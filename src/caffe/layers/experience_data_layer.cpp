@@ -84,6 +84,8 @@ void ExperienceDataLayer<Dtype>::InternalThreadEntry() {
   }
   Experience experience;
   const int batch_size = this->layer_param_.experience_param().batch_size();
+  CHECK(this->prefetch_states_.count());
+  CHECK(this->prefetch_new_states_.count());
   Dtype* state_data = prefetch_states_.mutable_cpu_data();
   Dtype* new_state_data = prefetch_new_states_.mutable_cpu_data();
   for (int item_id = 0; item_id < batch_size; ++item_id) {
@@ -146,6 +148,71 @@ void ExperienceDataLayer<Dtype>::Forward_cpu(
     // Start a new prefetch thread
     this->CreatePrefetchThread();
   }
+}
+
+template <typename Dtype>
+void ExperienceDataLayer<Dtype>::ComputeDataMean() {
+  LOG(INFO) << "Computing Data Mean";
+  leveldb::Iterator* it = NULL;
+  leveldb::ReadOptions read_options;
+  read_options.fill_cache = false;
+  it = db_->NewIterator(read_options);
+  it->SeekToFirst();
+
+  if (!iter_->Valid()) {
+    LOG(FATAL) << "Cannot compute data mean over an empty database!";
+  }
+
+  Experience experience;
+  BlobProto sum_blob;
+  int count = 0;
+  // load first datum
+  experience.ParseFromString(it->value().ToString());
+  sum_blob.set_num(1);
+  const Datum& datum = experience.state();
+  sum_blob.set_channels(datum.channels());
+  sum_blob.set_height(datum.height());
+  sum_blob.set_width(datum.width());
+  const int data_size = datum.channels() * datum.height() * datum.width();
+  int size_in_datum = std::max<int>(datum.data().size(),
+                                    datum.float_data_size());
+  for (int i = 0; i < size_in_datum; ++i) {
+    sum_blob.add_data(0.);
+  }
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    // just a dummy operation
+    experience.ParseFromString(it->value().ToString());
+    const Datum& state = experience.state();
+    const string& data = state.data();
+    // We omit the next-state from averaging as it will be a previous
+    // state of some other experience.
+    size_in_datum = std::max<int>(state.data().size(),
+                                  state.float_data_size());
+    CHECK_EQ(size_in_datum, data_size) << "Incorrect data field size " <<
+        size_in_datum;
+    if (data.size() != 0) {
+      for (int i = 0; i < size_in_datum; ++i) {
+        sum_blob.set_data(i, sum_blob.data(i) + (uint8_t)data[i]);
+      }
+    } else {
+      for (int i = 0; i < size_in_datum; ++i) {
+        sum_blob.set_data(i, sum_blob.data(i) +
+                          static_cast<float>(state.float_data(i)));
+      }
+    }
+    ++count;
+    if (count % 10000 == 0) {
+      LOG(ERROR) << "Processed " << count << " files.";
+    }
+  }
+
+  if (count % 10000 != 0) {
+    LOG(ERROR) << "Processed " << count << " files.";
+  }
+  for (int i = 0; i < sum_blob.data_size(); ++i) {
+    sum_blob.set_data(i, sum_blob.data(i) / count);
+  }
+  this->data_mean_.FromProto(sum_blob);
 }
 
 INSTANTIATE_CLASS(ExperienceDataLayer);

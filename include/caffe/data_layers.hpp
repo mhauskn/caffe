@@ -149,6 +149,8 @@ class ExperienceDataLayer : public BasePrefetchingDataLayer<Dtype> {
   virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);
 
+  virtual void ComputeDataMean();
+
   const shared_ptr<leveldb::DB>& db_ptr() const { return db_; }
   const shared_ptr<vector<int> >& actions_ptr() const { return actions_; }
   const shared_ptr<vector<float> >& rewards_ptr() const { return rewards_; }

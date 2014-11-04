@@ -767,6 +767,7 @@ void AtariSolver<Dtype>::PreSolve() {
   epsilon_ = Dtype(1);
   rescale_reward_ = this->param_.atari_param().rescale_reward();
   LOG(INFO) << "Minimum Action Set Size: " << ale_.getMinimalActionSet().size();
+  LOG(INFO) << "Legal Action Set Size: " << ale_.getLegalActionSet().size();
 
   // Copy the leveldb pointer from the experience layer
   shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
@@ -778,6 +779,9 @@ void AtariSolver<Dtype>::PreSolve() {
   actions_ = experience_layer->actions_ptr();
   rewards_ = experience_layer->rewards_ptr();
   labels_  = experience_layer->labels_ptr();
+  target_channels_ = experience_layer->datum_channels();
+  target_width_ = experience_layer->datum_width();
+  target_height_ = experience_layer->datum_height();
 }
 
 template <typename Dtype>
@@ -809,7 +813,14 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
     if (this->param_.test_interval() &&
         this->iter_ % this->param_.test_interval() == 0) {
-      this->PlayAtari(0);
+      // this->PlayAtari(0);
+      // Recompute the mean over the resulting data.
+      // shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
+      //     boost::dynamic_pointer_cast<ExperienceDataLayer<Dtype> >
+      //     (this->net_->layers()[0]);
+      // CHECK(experience_layer) <<
+      //     "Input Layer to the Atari Train Net must be a ExperienceDataLayer.";
+      // experience_layer->ComputeDataMean();
     }
 
     const bool display = this->param_.display() &&
@@ -874,16 +885,12 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   int max_experiences = this->param_.test_iter(test_net_id);
   Action action_index;
   float f;
-  Datum d;
-  int pos_saved = 0;
-  int neg_saved = 0;
   while (experience_count < max_experiences) {
     int steps = 0;
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
       ReadScreenToDatum(screen, experience.mutable_state());
-      ReadScreenToDatum(screen, &d);
       caffe_rng_uniform(1, 0.f, 1.f, &f);
       if (f < epsilon_) {
         action_index = Action(caffe_rng_rand() % legal_actions.size());
@@ -898,43 +905,21 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       totalReward += reward;
       steps++;
 
-      // Save as a datum
-      int label = 0;
-      if (reward > 0) {
-        label = 2;
-        pos_saved++;
-      } else if (reward < 0) {
-        label = 1;
-        neg_saved++;
-      }
-      d.set_label(label);
-      if (label == 0 && f > .01) {
-        ; // Skip
-      } else {
-        string value;
-        d.SerializeToString(&value);
-        leveldb::Slice key = dynamic_cast<std::ostringstream&>
-            ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-        batch.Put(key, value);
-        experience_count++;
-      }
-
       // Save the experience to the database
-      // TODO: Change this back after testing!!!!
-      // experience.set_action(0);
-      // experience.set_reward(reward);
-      // ReadScreenToDatum(screen, experience.mutable_new_state());
+      experience.set_action(action_index);
+      experience.set_reward(reward);
+      ReadScreenToDatum(screen, experience.mutable_new_state());
       // {  // Display the network's predictions
       //   memory_layer->AddDatumVector(datum_vector);
       //   const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
       //   DisplayExperience(experience, *output[0]);
       // }
-      // string value;
-      // experience.SerializeToString(&value);
-      // leveldb::Slice key = dynamic_cast<std::ostringstream&>
-      //     ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      // batch.Put(key, value);
-      // experience_count++;
+      string value;
+      experience.SerializeToString(&value);
+      leveldb::Slice key = dynamic_cast<std::ostringstream&>
+          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+      batch.Put(key, value);
+      experience_count++;
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -944,14 +929,12 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
   // Anneal epsilon
   epsilon_ = max(Dtype(0.1), epsilon_ - Dtype(experience_count / 1e6));
   LOG(INFO) << "Writing " << experience_count << " experiences to db.";
-  LOG(INFO) << "Pos_Saved " << pos_saved << " Neg_Saved " << neg_saved;
   // Write the batch of data to the db
   leveldb::WriteOptions write_options;
   write_options.sync = true;
   leveldb::Status status = db_->Write(write_options, &batch);
   Caffe::set_phase(Caffe::TRAIN);
   LOG(INFO) << "Leaving Game Playing Phase.";
-  exit(0);
 }
 
 template <typename Dtype>
@@ -1003,7 +986,7 @@ void AtariSolver<Dtype>::DisplayScreenFromDatum(const Datum& datum) {
 
 template <typename Dtype>
 void AtariSolver<Dtype>::DisplayExperience(const Experience& experience,
-                                           const Blob<Dtype>& activations) {
+                                           const Blob<Dtype>* activations) {
   const Datum& state = experience.state();
   const Datum& new_state = experience.new_state();
   CHECK_EQ(state.height(), new_state.height());
@@ -1036,32 +1019,34 @@ void AtariSolver<Dtype>::DisplayExperience(const Experience& experience,
   putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
   offset += 15;
 
-  ss.precision(3);
-  Dtype print_data[activations.count()];
-  caffe_gpu_memcpy(sizeof(Dtype)*activations.count(),
-                   activations.gpu_data(), &print_data);
-  Dtype max = print_data[0];
-  int n = 0;
-  while (n < activations.count()) {
-    ss.str("");
-    for (int i = 0; i < 5; ++i) {
-      if (n >= activations.count()) {
-        break;
+  if (activations != NULL) {
+    ss.precision(3);
+    Dtype print_data[activations->count()];
+    caffe_gpu_memcpy(sizeof(Dtype)*activations->count(),
+                     activations->gpu_data(), &print_data);
+    Dtype max = print_data[0];
+    int n = 0;
+    while (n < activations->count()) {
+      ss.str("");
+      for (int i = 0; i < 5; ++i) {
+        if (n >= activations->count()) {
+          break;
+        }
+        if (print_data[n] > max) {
+          max = print_data[n];
+        }
+        ss << std::fixed << print_data[n++] << " ";
       }
-      if (print_data[n] > max) {
-        max = print_data[n];
-      }
-      ss << std::fixed << print_data[n++] << " ";
+      org = cv::Point(0, screen_height + offset);
+      offset += 15;
+      putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
     }
+    ss.str("");
+    ss << "Max Val: " << std::scientific << max;
     org = cv::Point(0, screen_height + offset);
-    offset += 15;
     putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
+    offset += 15;
   }
-  ss.str("");
-  ss << "Max Val: " << std::scientific << max;
-  org = cv::Point(0, screen_height + offset);
-  putText(mat, ss.str(), org, cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar::all(255));
-  offset += 15;
 
   cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE);
   cv::imshow("Display window", mat);
@@ -1072,33 +1057,34 @@ void AtariSolver<Dtype>::DisplayExperience(const Experience& experience,
 template <typename Dtype>
 void AtariSolver<Dtype>::ReadScreenToDatum(const ALEScreen& screen,
                                            Datum* datum) {
+  CHECK_EQ(target_channels_, 3)
+      << "Only 3 channel conversion is currently supported.";
   const int screen_height = screen.height();
   const int screen_width = screen.width();
   unsigned char* pixels = screen.getArray();
 
   // TODO(mhauskn): Convert screen to grayscale?
-  const int target_height = screen_height / 2;
-  const int target_width = screen_width / 2;
-  const int channels = 3;
-  const int screen_size = target_height * target_width;
-  const int screen_bytes = channels * screen_size;
+  const float y_scale = screen_height / float(target_height_);
+  const float x_scale = screen_width / float(target_width_);
+  const int screen_size = target_height_ * target_width_;
+  const int screen_bytes = target_channels_ * screen_size;
   char str_buffer[screen_bytes];
-  // Downsample Image by factor of 2
   int r,g,b;
   int offset;
-  for (int y = 0; y < target_height; ++y) {
-    for (int x = 0; x < target_width; ++x) {
+  for (int y = 0; y < target_height_; ++y) {
+    for (int x = 0; x < target_width_; ++x) {
+      offset = ((int) (y_scale * y)) * screen_width + ((int) (x_scale * x));
       ale_.theOSystem->p_export_screen->
-          get_rgb_from_palette(pixels[2*y*screen_width+2*x],r,g,b);
-      offset = y * target_width + x;
+          get_rgb_from_palette(pixels[offset],r,g,b);
+      offset = y * target_width_ + x;
       str_buffer[offset] = (char) r;
       str_buffer[screen_size + offset] = (char) g;
       str_buffer[2 * screen_size + offset] = (char) b;
     }
   }
-  datum->set_channels(channels);
-  datum->set_height(target_height);
-  datum->set_width(target_width);
+  datum->set_channels(target_channels_);
+  datum->set_height(target_height_);
+  datum->set_width(target_width_);
   datum->set_data(str_buffer, screen_bytes);
   return;
 }
@@ -1239,7 +1225,7 @@ Dtype AtariSolver<Dtype>::GetEuclideanLoss(const vector<int>& actions,
   if (Caffe::mode() == Caffe::GPU) {
     Dtype tmp;
     const Dtype* gpu_data = diff->gpu_data();
-    PrintBlob("Diff", *diff, false);
+    // PrintBlob("Diff", *diff, false);
     // cout << "Diff: ";
     // setprecision(3);
     for (int n = 0; n < num; ++n) {
@@ -1309,7 +1295,7 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
                                        const Dtype gamma,
                                        Blob<Dtype>* labels) {
   // LOG(INFO) << "First Forward Pass Output:";
-  PrintBlob("Output", *output_blobs[0], false);
+  // PrintBlob("Output", *output_blobs[0], false);
   int batch_size = output_blobs[0]->num();
   CHECK_EQ(labels->count(), output_blobs[0]->count())
       << "Labels count does not equal output_blobs[0] count.";
@@ -1337,7 +1323,7 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
     int offset = labels->offset(n) + actions[n];
     label_data[offset] = target;
   }
-  PrintBlob("Labels", *labels, true);
+  // PrintBlob("Labels", *labels, true);
   return;
 }
 
