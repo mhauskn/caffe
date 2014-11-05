@@ -910,7 +910,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       steps++;
 
       // Save the experience to the database
-      experience.set_action(0); //action_index);
+      experience.set_action(action_index);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
       // {  // Display the network's predictions
@@ -918,14 +918,12 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       //   const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
       //   DisplayExperience(experience, *output[0]);
       // }
-      if (reward != Dtype(0) || f < .005) {
-        string value;
-        experience.SerializeToString(&value);
-        leveldb::Slice key = dynamic_cast<std::ostringstream&>
-            ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-        batch.Put(key, value);
-        experience_count++;
-      }
+      string value;
+      experience.SerializeToString(&value);
+      leveldb::Slice key = dynamic_cast<std::ostringstream&>
+          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+      batch.Put(key, value);
+      experience_count++;
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -1103,8 +1101,19 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
   Blob<Dtype>* output_blob = output_blobs[0];
   CHECK_GE(output_blob->channels(), num_legal_actions)
       << "Output layer has fewer channels than number of legal actions.";
-  // TODO: We may need to get GPU data in the GPU case!
-  const Dtype* output_data = output_blobs[0]->cpu_data();
+
+  const int count = output_blob->count();
+  Dtype* output_data;
+  if (Caffe::mode() == Caffe::GPU) {
+    output_data = new Dtype[count];
+    caffe_gpu_memcpy(sizeof(Dtype) * count, output_blobs[0]->gpu_data(),
+                     output_data);
+  } else if (Caffe::mode() == Caffe::CPU) {
+    output_data = output_blobs[0]->mutable_cpu_data();
+  } else {
+    LOG(FATAL) << "Unknown caffe mode.";
+  }
+
   if (max_actions != NULL) {
     for (int n = 0; n < output_blob->num(); ++n) {
       int start_indx = output_blob->offset(n);
@@ -1143,6 +1152,11 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
   } else {
     LOG(FATAL) << "Both max_actions and max_action_vals cannot be null!";
   }
+
+  if (Caffe::mode() == Caffe::GPU) {
+    delete[] output_data;
+  }
+
   return;
 }
 
@@ -1328,8 +1342,8 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   }
 
   // Compute the max over all next-state values
-  // Dtype max_action_vals[batch_size];
-  // GetMaxAction(output_blobs, NULL, max_action_vals);
+  Dtype max_action_vals[batch_size];
+  GetMaxAction(output_blobs, NULL, max_action_vals);
 
   // Compute the gamma-discounted max over next state actions and
   // use this compute the labels.
@@ -1342,7 +1356,7 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
         reward = Dtype(-1.0);
       }
     }
-    Dtype target(reward); // + gamma * max_action_vals[n]);
+    Dtype target(reward + gamma * max_action_vals[n]);
     int offset = labels->offset(n) + actions[n];
     label_data[offset] = target;
   }

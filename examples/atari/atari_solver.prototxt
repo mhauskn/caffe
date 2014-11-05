@@ -8,13 +8,13 @@ momentum: 0.9
 weight_decay: 0.004
 lr_policy: "fixed"
 display: 50
-max_iter: 10000
+max_iter: 100000
 snapshot: 1000
 snapshot_prefix: "examples/atari/atari_quick"
 solver_mode: GPU
 solver_type: ATARI
 atari_param {
   rom: "roms/boxing.bin"
-  gamma: 0
+  gamma: .98
   rescale_reward: false
 }
