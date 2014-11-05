@@ -13,8 +13,7 @@ layers {
     num_actions: 1
   }
   transform_param {
-    scale: 0.00390625
-    # mean_file: "examples/atari/mean.binaryproto"
+    mean_file: "examples/atari/mean.binaryproto"
   }
   include: { phase: TRAIN }
 }
@@ -30,8 +29,7 @@ layers {
     width: 80
   }
   transform_param {
-    scale: 0.00390625
-    # mean_file: "examples/atari/mean.binaryproto"
+    mean_file: "examples/atari/mean.binaryproto"
   }
   include: { phase: TEST }
 }
