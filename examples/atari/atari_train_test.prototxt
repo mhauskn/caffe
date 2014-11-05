@@ -10,11 +10,11 @@ layers {
     channels: 3
     height: 105
     width: 80
-    num_actions: 18
+    num_actions: 1
   }
   transform_param {
     scale: 0.00390625
-    mean_file: "examples/atari/mean.binaryproto"
+    # mean_file: "examples/atari/mean.binaryproto"
   }
   include: { phase: TRAIN }
 }
@@ -31,7 +31,7 @@ layers {
   }
   transform_param {
     scale: 0.00390625
-    mean_file: "examples/atari/mean.binaryproto"
+    # mean_file: "examples/atari/mean.binaryproto"
   }
   include: { phase: TEST }
 }
@@ -175,7 +175,7 @@ layers {
   blobs_lr: 1
   blobs_lr: 2
   inner_product_param {
-    num_output: 18
+    num_output: 1
     weight_filler {
       type: "gaussian"
       std: 0.1

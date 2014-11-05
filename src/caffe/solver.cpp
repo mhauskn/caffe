@@ -813,7 +813,11 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
     if (this->param_.test_interval() &&
         this->iter_ % this->param_.test_interval() == 0) {
-      // this->PlayAtari(0);
+      leveldb::Iterator* it = db_->NewIterator(leveldb::ReadOptions());
+      it->SeekToFirst();
+      if (!it->Valid()) {
+        this->PlayAtari(0);
+      }
       // Recompute the mean over the resulting data.
       // shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
       //     boost::dynamic_pointer_cast<ExperienceDataLayer<Dtype> >
@@ -906,7 +910,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       steps++;
 
       // Save the experience to the database
-      experience.set_action(action_index);
+      experience.set_action(0); //action_index);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
       // {  // Display the network's predictions
@@ -914,12 +918,14 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       //   const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
       //   DisplayExperience(experience, *output[0]);
       // }
-      string value;
-      experience.SerializeToString(&value);
-      leveldb::Slice key = dynamic_cast<std::ostringstream&>
-          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      batch.Put(key, value);
-      experience_count++;
+      if (reward != Dtype(0) || f < .005) {
+        string value;
+        experience.SerializeToString(&value);
+        leveldb::Slice key = dynamic_cast<std::ostringstream&>
+            ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
+        batch.Put(key, value);
+        experience_count++;
+      }
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
               << " steps with score: " << totalReward;
@@ -1143,12 +1149,23 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
 template <typename Dtype>
 Dtype AtariSolver<Dtype>::ForwardBackward(
     const vector<Blob<Dtype>*>& bottom_vec) {
+  // Run the first forward pass on the next state values
+  this->net_->Forward(bottom_vec);
+
   // Make a copy of the actions & rewards so the don't change under us
   vector<int> actions(*actions_);
   vector<float> rewards(*rewards_);
+  // cout << "Actions: ";
+  // for (int i = 0; i < actions.size(); ++i) {
+  //   cout << actions[i] << " ";
+  // }
+  // cout << endl;
+  // cout << "Rewards: ";
+  // for (int i = 0; i < rewards.size(); ++i) {
+  //   cout << rewards[i] << " ";
+  // }
+  // cout << endl;
 
-  // Run the first forward pass on the next state values
-  this->net_->Forward(bottom_vec);
   // Access the output values of the network.
   const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
   // Here we assume that the last layer is a loss layer so the 2nd
@@ -1166,6 +1183,7 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   CHECK(loss_layer) <<
       "Last Layer of the Atari Test Net must be a Euclidean Loss Layer.";
   Blob<Dtype>* diff = loss_layer->mutable_diff();
+  // PrintBlob("Pre-Zeroed Diff", *diff, false);
   // Update the diff blob from the loss layer to only take the diff of
   // the output nodes for which actions were taken.
   ClearNonActionDiffs(actions, diff);
@@ -1303,6 +1321,11 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   CHECK_EQ(batch_size, actions.size()) << "Output size must equal action size!";
 
   Dtype* label_data = labels->mutable_cpu_data();
+
+  // Zero all the labels
+  for (int i = 0; i < labels->count(); ++i) {
+    label_data[i] = Dtype(0);
+  }
 
   // Compute the max over all next-state values
   // Dtype max_action_vals[batch_size];
