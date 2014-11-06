@@ -27,10 +27,13 @@ def SaveImagesAndActivations():
     net.forward()
     for i in range(net.blobs['data'].data.shape[0]):
         plt.imshow(net.blobs['data'].data[i][0])
-        plt.annotate(str(net.blobs['ip2'].data[i]),
-                     xy=(0,0), xytext=(.8,0), fontsize=20)
+        text = 'Min: ' + str(np.min(net.blobs['ip2'].data[i])) + \
+               ' Avg: ' + str(np.mean(net.blobs['ip2'].data[i])) + \
+               ' Max: ' + str(np.max(net.blobs['ip2'].data[i]))
+        plt.annotate(text, xy=(0,0.01), xycoords='axes fraction', fontsize=12)
         plt.savefig('figs/%d.pdf'%i)
         plt.clf()
+        plt.close()
 
 def findNonzeroLabel():
     while not np.nonzero(net.blobs['label'].data)[0]:
