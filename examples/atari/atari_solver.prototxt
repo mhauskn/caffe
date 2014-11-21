@@ -1,7 +1,7 @@
 net: "examples/atari/atari_train_test.prototxt"
-# Number of experiences to put into db per PlayAtari
-test_iter: 10000
-test_interval: 1000
+# Number of experiences to sample in each call to PlayAtari
+test_iter: 1000
+test_interval: 100
 base_lr: 0.001
 gamma: 0.999
 momentum: 0.9
@@ -15,6 +15,7 @@ solver_mode: GPU
 solver_type: ATARI
 atari_param {
   rom: "roms/boxing.bin"
-  gamma: .98
+  gamma: 0.7
   rescale_reward: false
+  replay_memory_size: 100000
 }

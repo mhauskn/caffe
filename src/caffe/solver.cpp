@@ -766,22 +766,18 @@ void AtariSolver<Dtype>::PreSolve() {
   gamma_ = Dtype(this->param_.atari_param().gamma());
   epsilon_ = Dtype(1);
   rescale_reward_ = this->param_.atari_param().rescale_reward();
+  memory_size_ = this->param_.atari_param().replay_memory_size();
   LOG(INFO) << "Minimum Action Set Size: " << ale_.getMinimalActionSet().size();
   LOG(INFO) << "Legal Action Set Size: " << ale_.getLegalActionSet().size();
 
-  // Copy the leveldb pointer from the experience layer
-  shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
-      boost::dynamic_pointer_cast<ExperienceDataLayer<Dtype> >
+  shared_ptr<BaseDataLayer<Dtype> > data_layer =
+      boost::dynamic_pointer_cast<BaseDataLayer<Dtype> >
       (this->net_->layers()[0]);
-  CHECK(experience_layer) <<
-      "Input Layer to the Atari Train Net must be a ExperienceDataLayer.";
-  db_      = experience_layer->db_ptr();
-  actions_ = experience_layer->actions_ptr();
-  rewards_ = experience_layer->rewards_ptr();
-  labels_  = experience_layer->labels_ptr();
-  target_channels_ = experience_layer->datum_channels();
-  target_width_ = experience_layer->datum_width();
-  target_height_ = experience_layer->datum_height();
+  CHECK(data_layer) <<
+      "Input Layer to the Atari Train Net must be a DataLayer.";
+  target_channels_ = data_layer->datum_channels();
+  target_width_ = data_layer->datum_width();
+  target_height_ = data_layer->datum_height();
 }
 
 template <typename Dtype>
@@ -813,18 +809,7 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
 
     if (this->param_.test_interval() &&
         this->iter_ % this->param_.test_interval() == 0) {
-      leveldb::Iterator* it = db_->NewIterator(leveldb::ReadOptions());
-      it->SeekToFirst();
-      if (!it->Valid()) {
-        this->PlayAtari(0);
-      }
-      // Recompute the mean over the resulting data.
-      // shared_ptr<ExperienceDataLayer<Dtype> > experience_layer =
-      //     boost::dynamic_pointer_cast<ExperienceDataLayer<Dtype> >
-      //     (this->net_->layers()[0]);
-      // CHECK(experience_layer) <<
-      //     "Input Layer to the Atari Train Net must be a ExperienceDataLayer.";
-      // experience_layer->ComputeDataMean();
+      this->PlayAtari(0);
     }
 
     const bool display = this->param_.display() &&
@@ -858,21 +843,20 @@ void AtariSolver<Dtype>::Solve(const char* resume_file) {
     this->net_->Forward(bottom_vec, &loss);
     LOG(INFO) << "Iteration " << this->iter_ << ", loss = " << loss;
   }
-  // if (this->param_.test_interval() &&
-  //     this->iter_ % this->param_.test_interval() == 0) {
-  //   this->PlayAtari(0);
-  // }
+  if (this->param_.test_interval() &&
+      this->iter_ % this->param_.test_interval() == 0) {
+    this->PlayAtari(0);
+  }
   LOG(INFO) << "Optimization Done.";
 }
 
 template <typename Dtype>
 void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
-  LOG(INFO) << "Entering Game Playing Phase. epsilon=" << epsilon_;
+  LOG(INFO) << "Entering Game Playing Phase. Epsilon=" << epsilon_;
   Caffe::set_phase(Caffe::TEST);
   CHECK_NOTNULL(this->test_nets_[test_net_id].get())->
       ShareTrainedLayersWith(this->net_.get());
   Net<Dtype>* test_net = this->test_nets_[test_net_id].get();
-  LevelDB_DeleteAll(db_.get());
   ActionVect legal_actions = ale_.getLegalActionSet();
   const ALEScreen& screen = ale_.getScreen();
   vector<Datum> datum_vector(1);
@@ -909,7 +893,6 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       totalReward += reward;
       steps++;
 
-      // Save the experience to the database
       experience.set_action(action_index);
       experience.set_reward(reward);
       ReadScreenToDatum(screen, experience.mutable_new_state());
@@ -918,25 +901,22 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
       //   const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
       //   DisplayExperience(experience, *output[0]);
       // }
-      string value;
-      experience.SerializeToString(&value);
-      leveldb::Slice key = dynamic_cast<std::ostringstream&>
-          ((std::ostringstream() << std::dec << caffe_rng_rand())).str();
-      batch.Put(key, value);
+
+      // Add the experience to the experience memory
+      experience_memory_.push_back(experience);
+      if (experience_memory_.size() >= memory_size_) {
+        experience_memory_.pop_front();
+      }
       experience_count++;
     }
     LOG(INFO) << "Episode " << episode << " ended in " << steps
-              << " steps with score: " << totalReward;
+              << " steps with score " << totalReward;
     ale_.reset_game();
     episode++;
   }
   // Anneal epsilon
   epsilon_ = max(Dtype(0.1), epsilon_ - Dtype(experience_count / 1e6));
-  LOG(INFO) << "Writing " << experience_count << " experiences to db.";
-  // Write the batch of data to the db
-  leveldb::WriteOptions write_options;
-  write_options.sync = true;
-  leveldb::Status status = db_->Write(write_options, &batch);
+  LOG(INFO) << "Annealing Epsilon to " << epsilon_;
   Caffe::set_phase(Caffe::TRAIN);
   LOG(INFO) << "Leaving Game Playing Phase.";
 }
@@ -1163,32 +1143,42 @@ void AtariSolver<Dtype>::GetMaxAction(const vector<Blob<Dtype>*>& output_blobs,
 template <typename Dtype>
 Dtype AtariSolver<Dtype>::ForwardBackward(
     const vector<Blob<Dtype>*>& bottom_vec) {
-  // Run the first forward pass on the next state values
-  this->net_->Forward(bottom_vec);
+  const shared_ptr<MemoryDataLayer<Dtype> > memory_layer =
+      boost::dynamic_pointer_cast<MemoryDataLayer<Dtype> >
+      (this->net_->layers()[0]);
+  CHECK(memory_layer) <<
+      "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
 
-  // Make a copy of the actions & rewards so the don't change under us
-  vector<int> actions(*actions_);
-  vector<float> rewards(*rewards_);
-  // cout << "Actions: ";
-  // for (int i = 0; i < actions.size(); ++i) {
-  //   cout << actions[i] << " ";
-  // }
-  // cout << endl;
-  // cout << "Rewards: ";
-  // for (int i = 0; i < rewards.size(); ++i) {
-  //   cout << rewards[i] << " ";
-  // }
-  // cout << endl;
+  int batch_size = memory_layer->batch_size();
+  vector<int> actions;
+  vector<float> rewards;
+  vector<Datum> state_datum_vector(batch_size);
+  vector<Datum> new_state_datum_vector(batch_size);
+  for (int i = 0; i < batch_size; ++i) {
+    Experience& exp = experience_memory_.at(
+        caffe_rng_rand() % experience_memory_.size());
+    actions.push_back(exp.action());
+    rewards.push_back(exp.reward());
+    state_datum_vector[i] = exp.state();
+    new_state_datum_vector[i] = exp.new_state();
+  }
+
+  // Run the first forward pass on the next state values
+  memory_layer->AddDatumVector(new_state_datum_vector);
+  this->net_->Forward(bottom_vec);
 
   // Access the output values of the network.
   const vector<vector<Blob<Dtype>*> >& top_vecs = this->net_->top_vecs();
   // Here we assume that the last layer is a loss layer so the 2nd
   // to last layer contains the blobs of interest.
   const vector<Blob<Dtype>*>& output_blobs = top_vecs[top_vecs.size() - 2];
+  // PrintBlob("NextStateOutputs", *output_blobs[0], false);
   // Compute the targets for forward-backward
-  ComputeLabels(output_blobs, actions, rewards, gamma_, labels_.get());
+  ComputeLabels(output_blobs, actions, rewards, gamma_,
+                memory_layer->labels_ptr());
   // Run the next forward pass on the previous state values. This is
   // done automatically by the ExperienceDataLayer.
+  memory_layer->AddDatumVector(state_datum_vector);
   this->net_->Forward(bottom_vec);
   // Get the loss layer to do special hacks on it...
   const shared_ptr<EuclideanLossLayer<Dtype> > loss_layer =
@@ -1201,6 +1191,7 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
   // Update the diff blob from the loss layer to only take the diff of
   // the output nodes for which actions were taken.
   ClearNonActionDiffs(actions, diff);
+  // PrintBlob("Post-Zeroed Diff", *diff, false);
   // Get the actual loss - Only penalize net for predictions of
   // actions that were actually taken.
   Dtype loss = GetEuclideanLoss(actions, diff);

@@ -83,6 +83,8 @@ message AtariParameter {
   optional float gamma = 2 [default = .98];
   // Rescale rewards to [0,1]
   optional bool rescale_reward = 3 [default = false];
+  // Size of the replay memory
+  optional int32 replay_memory_size = 4 [default = 100000];
 }
 
 // NOTE

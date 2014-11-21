@@ -1,16 +1,14 @@
 name: "Atari_quick"
 layers {
-  name: "atari-data"
-  type: EXPERIENCE_DATA
+  name: "atari-memory-train"
+  type: MEMORY_DATA
   top: "data"
   top: "label"
-  experience_param {
-    source: "examples/atari/atari_train_leveldb"
+  memory_data_param {
     batch_size: 64
     channels: 3
     height: 105
     width: 80
-    num_actions: 18
   }
   transform_param {
     mean_file: "examples/atari/mean.binaryproto"
@@ -18,7 +16,7 @@ layers {
   include: { phase: TRAIN }
 }
 layers {
-  name: "atari-memory"
+  name: "atari-memory-test"
   type: MEMORY_DATA
   top: "data"
   top: "label"

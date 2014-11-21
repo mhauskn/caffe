@@ -347,6 +347,8 @@ class MemoryDataLayer : public BaseDataLayer<Dtype> {
 
   int batch_size() { return batch_size_; }
 
+  Blob<Dtype>* labels_ptr() { return &added_label_; }
+
  protected:
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);

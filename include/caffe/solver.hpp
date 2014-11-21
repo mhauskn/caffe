@@ -183,6 +183,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   Dtype epsilon_;
   Dtype gamma_;
   bool rescale_reward_;
+  int memory_size_;
   ALEInterface ale_;
   shared_ptr<leveldb::DB> db_;
   shared_ptr<vector<int> > actions_;
@@ -192,6 +193,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   int target_channels_;
   int target_width_;
   int target_height_;
+  std::deque<Experience> experience_memory_;
 
   DISABLE_COPY_AND_ASSIGN(AtariSolver);
 };
