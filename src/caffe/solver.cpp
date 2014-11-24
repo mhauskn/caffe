@@ -767,6 +767,7 @@ void AtariSolver<Dtype>::PreSolve() {
   epsilon_ = Dtype(1);
   rescale_reward_ = this->param_.atari_param().rescale_reward();
   memory_size_ = this->param_.atari_param().replay_memory_size();
+  zero_nonaction_diffs_ = this->param_.atari_param().zero_nonaction_diffs();
   LOG(INFO) << "Minimum Action Set Size: " << ale_.getMinimalActionSet().size();
   LOG(INFO) << "Legal Action Set Size: " << ale_.getLegalActionSet().size();
 
@@ -895,7 +896,7 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
 
       experience.set_action(action_index);
       experience.set_reward(reward);
-      ReadScreenToDatum(screen, experience.mutable_new_state());
+      // ReadScreenToDatum(screen, experience.mutable_new_state());
       // {  // Display the network's predictions
       //   memory_layer->AddDatumVector(datum_vector);
       //   const vector<Blob<Dtype>*> output = test_net->Forward(bottom_vec);
@@ -1150,19 +1151,21 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
       (this->net_->layers()[0]);
   CHECK(memory_layer) <<
       "Input Layer to the Atari Test Net must be a MemoryDataLayer.";
-
+  CHECK_GT(experience_memory_.size(), 1) <<
+      "Experience Memory Size Too Small.";
   int batch_size = memory_layer->batch_size();
   vector<int> actions;
   vector<float> rewards;
   vector<Datum> state_datum_vector(batch_size);
   vector<Datum> new_state_datum_vector(batch_size);
   for (int i = 0; i < batch_size; ++i) {
-    Experience& exp = experience_memory_.at(
-        caffe_rng_rand() % experience_memory_.size());
+    int exp_indx = caffe_rng_rand() % (experience_memory_.size() - 1);
+    Experience& exp = experience_memory_.at(exp_indx);
+    Experience& next_exp = experience_memory_.at(exp_indx + 1);
+    state_datum_vector[i] = exp.state();
     actions.push_back(exp.action());
     rewards.push_back(exp.reward());
-    state_datum_vector[i] = exp.state();
-    new_state_datum_vector[i] = exp.new_state();
+    new_state_datum_vector[i] = next_exp.state();
   }
 
   // Run the first forward pass on the next state values
@@ -1180,24 +1183,27 @@ Dtype AtariSolver<Dtype>::ForwardBackward(
                 memory_layer->labels_ptr());
   // Run the next forward pass on the previous state values. This is
   // done automatically by the ExperienceDataLayer.
+  Dtype loss;
   memory_layer->AddDatumVector(state_datum_vector);
-  this->net_->Forward(bottom_vec);
-  // Get the loss layer to do special hacks on it...
-  const shared_ptr<EuclideanLossLayer<Dtype> > loss_layer =
-      boost::dynamic_pointer_cast<EuclideanLossLayer<Dtype> >
-      (this->net_->layers().back());
-  CHECK(loss_layer) <<
-      "Last Layer of the Atari Test Net must be a Euclidean Loss Layer.";
-  Blob<Dtype>* diff = loss_layer->mutable_diff();
-  // PrintBlob("Pre-Zeroed Diff", *diff, false);
-  // Update the diff blob from the loss layer to only take the diff of
-  // the output nodes for which actions were taken.
-  ClearNonActionDiffs(actions, diff);
-  // PrintBlob("Post-Zeroed Diff", *diff, false);
-  // Get the actual loss - Only penalize net for predictions of
-  // actions that were actually taken.
-  Dtype loss = GetEuclideanLoss(actions, diff);
-  // Run the backwards pass on the network and return the loss.
+  this->net_->Forward(bottom_vec, &loss);
+  if (zero_nonaction_diffs_) {
+    // Get the loss layer to do special hacks on it...
+    const shared_ptr<EuclideanLossLayer<Dtype> > loss_layer =
+        boost::dynamic_pointer_cast<EuclideanLossLayer<Dtype> >
+        (this->net_->layers().back());
+    CHECK(loss_layer) <<
+        "Last Layer of the Atari Test Net must be a Euclidean Loss Layer.";
+    Blob<Dtype>* diff = loss_layer->mutable_diff();
+    // PrintBlob("Pre-Zeroed Diff", *diff, false);
+    // Update the diff blob from the loss layer to only take the diff of
+    // the output nodes for which actions were taken.
+    ClearNonActionDiffs(actions, diff);
+    // PrintBlob("Post-Zeroed Diff", *diff, false);
+    // Get the actual loss - Only penalize net for predictions of
+    // actions that were actually taken.
+    loss = GetEuclideanLoss(actions, diff);
+  }
+  // Run the backwards pass on the network.
   this->net_->Backward();
   return loss;
 }
@@ -1330,9 +1336,9 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
   Dtype* label_data = labels->mutable_cpu_data();
 
   // Zero all the labels
-  for (int i = 0; i < labels->count(); ++i) {
-    label_data[i] = Dtype(0);
-  }
+  // for (int i = 0; i < labels->count(); ++i) {
+  //   label_data[i] = Dtype(0);
+  // }
 
   // Compute the max over all next-state values
   Dtype max_action_vals[batch_size];
@@ -1350,8 +1356,13 @@ void AtariSolver<Dtype>::ComputeLabels(const vector<Blob<Dtype>*>& output_blobs,
       }
     }
     Dtype target(reward + gamma * max_action_vals[n]);
-    int offset = labels->offset(n) + actions[n];
-    label_data[offset] = target;
+    int offset = labels->offset(n);
+    for (int c = 0; c < labels->channels(); ++c) {
+      // Here we set all labels to the target rather than only the one
+      // corresponding to the action. The labels not corresponding to
+      // the action will be ignored in later stages if desired.
+      label_data[offset + c] = target;
+    }
   }
   // PrintBlob("Labels", *labels, true);
   return;

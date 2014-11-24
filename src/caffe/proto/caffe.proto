@@ -43,6 +43,11 @@ message Experience {
   optional Datum new_state = 4;
 }
 
+// A memory of experiences
+message ExperienceMemory {
+  repeated Experience memory = 1;
+}
+
 message FillerParameter {
   // The filler type.
   optional string type = 1 [default = 'constant'];
@@ -85,6 +90,8 @@ message AtariParameter {
   optional bool rescale_reward = 3 [default = false];
   // Size of the replay memory
   optional int32 replay_memory_size = 4 [default = 100000];
+  // Update actions only (zero diffs for all non-actions)
+  optional bool zero_nonaction_diffs = 5 [default = true];
 }
 
 // NOTE

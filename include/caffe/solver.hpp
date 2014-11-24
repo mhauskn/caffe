@@ -183,6 +183,7 @@ class AtariSolver : public SGDSolver<Dtype> {
   Dtype epsilon_;
   Dtype gamma_;
   bool rescale_reward_;
+  bool zero_nonaction_diffs_;
   int memory_size_;
   ALEInterface ale_;
   shared_ptr<leveldb::DB> db_;
