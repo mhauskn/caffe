@@ -887,9 +887,9 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
         GetMaxAction(test_net->Forward(bottom_vec), &action_index);
       }
       float reward = ale_.act(legal_actions[action_index]);
-      if (reward != Dtype(0)) {
-        LOG(INFO) << "Reward " << reward;
-      }
+      // if (reward != Dtype(0)) {
+      //   LOG(INFO) << "Reward " << reward;
+      // }
       totalReward += reward;
       steps++;
 
@@ -914,6 +914,8 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
     ale_.reset_game();
     episode++;
   }
+  LOG(INFO) << "Added " << experience_count <<
+      " experiences. Current Memory Size " << experience_memory_.size();
   // Anneal epsilon
   epsilon_ = max(Dtype(0.1), epsilon_ - Dtype(experience_count / 1e6));
   LOG(INFO) << "Annealing Epsilon to " << epsilon_;
