@@ -879,6 +879,11 @@ void AtariSolver<Dtype>::PlayAtari(const int test_net_id) {
     float totalReward = 0;
     while (!ale_.game_over()) {
       ReadScreenToDatum(screen, &(datum_vector[0]));
+      // {
+      // std::stringstream ss;
+      // ss << "examples/images/atari" << experience_count << ".jpg";
+      // WriteImageFromDatum(ss.str(), datum_vector[0]);
+      // {
       ReadScreenToDatum(screen, experience.mutable_state());
       caffe_rng_uniform(1, 0.f, 1.f, &f);
       if (f < epsilon_) {

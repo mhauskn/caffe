@@ -112,6 +112,26 @@ bool ReadImageToDatum(const string& filename, const int label,
   return true;
 }
 
+bool WriteImageFromDatum(const string& filename, const Datum& datum) {
+  const int screen_height = datum.height();
+  const int screen_width = datum.width();
+  const int screen_bytes = screen_height * screen_width;
+  const string& data = datum.data();
+  cv::Mat mat(screen_height, screen_width, CV_8UC4);
+  for (int i = 0; i < mat.rows; ++i) {
+    for (int j = 0; j < mat.cols; ++j) {
+      int offset = i * screen_width + j;
+      cv::Vec4b& rgba = mat.at<cv::Vec4b>(i, j);
+      rgba[2] = data[0 * screen_bytes + offset]; // Red Channel
+      rgba[1] = data[1 * screen_bytes + offset]; // Green Channel
+      rgba[0] = data[2 * screen_bytes + offset]; // Blue Channel
+      rgba[3] = static_cast<unsigned char>(255); // Alpha Channel
+    }
+  }
+  imwrite(filename, mat);
+  return true;
+}
+
 leveldb::Options GetLevelDBOptions() {
   // In default, we will return the leveldb option and set the max open files
   // in order to avoid using up the operating system's limit.
