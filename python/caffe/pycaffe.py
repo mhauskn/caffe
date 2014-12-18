@@ -334,7 +334,7 @@ def _Net_deprocess(self, input_name, input_):
     return decaf_in
 
 
-def _Net_set_input_arrays(self, data, labels):
+def _Net_set_input_arrays(self, layer, data, labels):
     """
     Set input arrays of the in-memory MemoryDataLayer.
     (Note: this is only for networks declared with the memory data layer.)
@@ -342,7 +342,7 @@ def _Net_set_input_arrays(self, data, labels):
     if labels.ndim == 1:
         labels = np.ascontiguousarray(labels[:, np.newaxis, np.newaxis,
                                              np.newaxis])
-    return self._set_input_arrays(data, labels)
+    return self._set_input_arrays(layer, data, labels)
 
 
 def _Net_batch(self, blobs):
