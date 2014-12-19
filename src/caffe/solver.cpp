@@ -350,6 +350,9 @@ void Solver<Dtype>::Snapshot() {
 
 template <typename Dtype>
 void Solver<Dtype>::Restore(const char* state_file) {
+  if (!initialized_) {
+    PreSolve();
+  }
   SolverState state;
   NetParameter net_param;
   ReadProtoFromBinaryFile(state_file, &state);
