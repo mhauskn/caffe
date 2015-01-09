@@ -3,7 +3,6 @@ layers {
   name: "mnist"
   type: DATA
   top: "data"
-  top: "label"
   data_param {
     source: "examples/mnist/mnist_train_lmdb"
     backend: LMDB
@@ -18,7 +17,6 @@ layers {
   name: "mnist"
   type: DATA
   top: "data"
-  top: "label"
   data_param {
     source: "examples/mnist/mnist_test_lmdb"
     backend: LMDB
@@ -29,7 +27,12 @@ layers {
   }
   include: { phase: TEST }
 }
-
+layers {
+  bottom: "data"
+  top: "flatdata"
+  name: "flatdata"
+  type: FLATTEN
+}
 layers {
   name: "conv1"
   type: CONVOLUTION
@@ -121,7 +124,7 @@ layers {
   blobs_lr: 1
   blobs_lr: 2
   inner_product_param {
-    num_output: 10
+    num_output: 784
     weight_filler {
       type: "xavier"
     }
@@ -131,17 +134,23 @@ layers {
   }
 }
 layers {
-  name: "accuracy"
-  type: ACCURACY
   bottom: "ip2"
-  bottom: "label"
-  top: "accuracy"
-  include: { phase: TEST }
+  bottom: "flatdata"
+  top: "cross_entropy_loss"
+  name: "loss"
+  type: SIGMOID_CROSS_ENTROPY_LOSS
+  loss_weight: 1
+}
+layers {
+  bottom: "ip2"
+  top: "ip2sig"
+  name: "ip2sig"
+  type: SIGMOID
 }
 layers {
   name: "loss"
-  type: SOFTMAX_LOSS
-  bottom: "ip2"
-  bottom: "label"
+  type: EUCLIDEAN_LOSS
+  bottom: "flatdata"
+  bottom: "ip2sig"
   top: "loss"
 }
