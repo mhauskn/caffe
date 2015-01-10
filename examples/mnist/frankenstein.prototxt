@@ -38,8 +38,8 @@ layers {
   type: CONVOLUTION
   bottom: "data"
   top: "conv1"
-  blobs_lr: 1
-  blobs_lr: 2
+  blobs_lr: 0
+  blobs_lr: 0
   convolution_param {
     num_output: 20
     kernel_size: 5
@@ -68,8 +68,8 @@ layers {
   type: CONVOLUTION
   bottom: "pool1"
   top: "conv2"
-  blobs_lr: 1
-  blobs_lr: 2
+  blobs_lr: 0
+  blobs_lr: 0
   convolution_param {
     num_output: 50
     kernel_size: 5
@@ -98,8 +98,8 @@ layers {
   type: INNER_PRODUCT
   bottom: "pool2"
   top: "ip1"
-  blobs_lr: 1
-  blobs_lr: 2
+  blobs_lr: 0
+  blobs_lr: 0
   inner_product_param {
     num_output: 500
     weight_filler {
@@ -121,10 +121,10 @@ layers {
   type: INNER_PRODUCT
   bottom: "ip1"
   top: "ip2"
-  blobs_lr: 1
-  blobs_lr: 2
+  blobs_lr: 0
+  blobs_lr: 0
   inner_product_param {
-    num_output: 784
+    num_output: 10
     weight_filler {
       type: "xavier"
     }
@@ -134,7 +134,33 @@ layers {
   }
 }
 layers {
+  name: "prob"
+  type: SOFTMAX
   bottom: "ip2"
+  top: "prob"
+}
+layers {
+  name: "decode"
+  type: INNER_PRODUCT
+  bottom: "prob"
+  top: "decode"
+  blobs_lr: 1
+  blobs_lr: 2
+  inner_product_param {
+    num_output: 784
+    weight_filler {
+      type: "gaussian"
+      std: 1
+      sparse: 15
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layers {
+  bottom: "decode"
   bottom: "flatdata"
   top: "cross_entropy_loss"
   name: "loss"
@@ -142,15 +168,15 @@ layers {
   loss_weight: 1
 }
 layers {
-  bottom: "ip2"
-  top: "ip2sig"
-  name: "ip2sig"
+  bottom: "decode"
+  top: "decodesig"
+  name: "decodesig"
   type: SIGMOID
 }
 layers {
   name: "loss"
   type: EUCLIDEAN_LOSS
   bottom: "flatdata"
-  bottom: "ip2sig"
+  bottom: "decodesig"
   top: "loss"
 }
