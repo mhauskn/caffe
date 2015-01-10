@@ -60,6 +60,7 @@ class Solver {
   SolverParameter param_;
   int start_iter_;
   int iter_;
+  int current_step_;
   shared_ptr<Net<Dtype> > net_;
   vector<shared_ptr<Net<Dtype> > > test_nets_;
   bool initialized_;
