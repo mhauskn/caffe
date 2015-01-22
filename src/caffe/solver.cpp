@@ -1010,6 +1010,9 @@ void RMSPropSolver<Dtype>::ComputeUpdateValue() {
   vector<float>& net_params_weight_decay = this->net_->params_weight_decay();
   // get the learning rate
   Dtype rate = this->GetLearningRate();
+  if (this->param_.display() && this->iter_ % this->param_.display() == 0) {
+    LOG(INFO) << "Iteration " << this->iter_ << ", lr = " << rate;
+  }
   Dtype delta = this->param_.delta();
   Dtype momentum = this->param_.momentum();
   Dtype weight_decay = this->param_.weight_decay();
