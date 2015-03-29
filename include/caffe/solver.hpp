@@ -39,17 +39,18 @@ class Solver {
   // function that restores the state from a SolverState protocol buffer.
   void Restore(const char* resume_file);
 
+  // The Solver::Snapshot function implements the basic snapshotting utility
+  // that stores the learned net. You should implement the SnapshotSolverState()
+  // function that produces a SolverState protocol buffer that needs to be
+  // written to disk together with the learned net.
+  void Snapshot();
+
  protected:
   // PreSolve is run before any solving iteration starts, allowing one to
   // put up some scaffold.
   virtual void PreSolve();
   // Get the update value for the current iteration.
   virtual void ComputeUpdateValue() = 0;
-  // The Solver::Snapshot function implements the basic snapshotting utility
-  // that stores the learned net. You should implement the SnapshotSolverState()
-  // function that produces a SolverState protocol buffer that needs to be
-  // written to disk together with the learned net.
-  void Snapshot();
   // The test routine
   void TestAll();
   void Test(const int test_net_id = 0);
