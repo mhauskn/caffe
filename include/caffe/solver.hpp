@@ -44,11 +44,11 @@ class Solver {
   // function that produces a SolverState protocol buffer that needs to be
   // written to disk together with the learned net.
   void Snapshot();
-
- protected:
   // PreSolve is run before any solving iteration starts, allowing one to
   // put up some scaffold.
   virtual void PreSolve();
+
+ protected:
   // Get the update value for the current iteration.
   virtual void ComputeUpdateValue() = 0;
   // The test routine
